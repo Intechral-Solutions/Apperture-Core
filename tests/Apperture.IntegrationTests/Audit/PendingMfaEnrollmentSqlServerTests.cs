@@ -52,15 +52,12 @@ public sealed class PendingMfaEnrollmentSqlServerTests : IClassFixture<AuditIsol
         return (world, new UserId(await world.NewUserAsync("mfa")));
     }
 
+    /// <summary>
+    /// The production service (IAM-10.2b WP4B-C): beginning an enrolment takes no gate; completing one takes the global gate and asserts that
+    /// it only added.
+    /// </summary>
     private static NativeMfaService Mfa(AppertureDbContext db) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            new ManagementHost.IntegrationTestSecretProtector(),
-            TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            NewUnit(db, null));
+        NativeMfaComposition.Over(db, null, new ManagementHost.IntegrationTestSecretProtector());
 
     private static string CodeFor(NativeMfaEnrollmentChallenge challenge) =>
         Rfc6238Totp.Compute(Base32.Decode(challenge.ManualEntryKey), DateTimeOffset.UtcNow.ToUnixTimeSeconds());

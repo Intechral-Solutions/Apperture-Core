@@ -108,12 +108,13 @@ public sealed class MfaReplacementAuditContractTests
     }
 
     /// <summary>
-    /// The candidate repository is persistence-only until the replacement service exists. The files below name it; any other
-    /// production file that does is the service the integration package writes, and it must extend this list in the same change
-    /// (and give the writer-coverage guard the new write calls).
+    /// The files that name the candidate repository: its contract, its implementation, the registrations, and the one service that
+    /// replaces an authenticator (whose writes the writer-coverage guard counts by the receiver's type). Any other production file that
+    /// names it must be added here in the same change, with its writes classified.
     /// </summary>
     private static readonly string[] FilesNamingTheCandidateRepository =
     [
+        "Apperture.ControlPlane/Apperture.ControlPlane.Security/NativeMfaService.cs",
         "Apperture.ControlPlane/Apperture.ControlPlane.Security/ServiceCollectionExtensions.Governance.cs",
         "Apperture.Core/Apperture.Core.Application/Services/INativeMfaReplacementCandidateRepository.cs",
         "Apperture.Persistence/Apperture.Persistence.SqlServer/SqlNativeMfaReplacementCandidateRepository.cs",
@@ -144,13 +145,14 @@ public sealed class MfaReplacementAuditContractTests
     }
 
     [Fact]
-    public void Staging_the_replacement_has_no_production_caller_yet()
+    public void The_replacement_is_recorded_only_by_the_switch_of_the_native_mfa_service()
     {
         var callers = RepositorySource.Production
             .Where(f => f.Code.Contains("AuditEvents.MfaReplaced(", StringComparison.Ordinal))
             .Select(f => f.RelativePath)
             .ToList();
 
-        callers.Should().BeEmpty("the replacement service does not exist yet; this pin moves with it");
+        callers.Should().BeEquivalentTo(["Apperture.ControlPlane/Apperture.ControlPlane.Security/NativeMfaService.cs"],
+            "the row commits with the switch, in its audited unit");
     }
 }

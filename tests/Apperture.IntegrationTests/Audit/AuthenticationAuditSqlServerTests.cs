@@ -195,15 +195,9 @@ public sealed class AuthenticationAuditSqlServerTests : IAsyncLifetime
         }
     }
 
+    /// <summary>The production service (IAM-10.2b WP4B-C): a regeneration of the codes takes the global gate and asserts it only added.</summary>
     private static NativeMfaService Mfa(AppertureDbContext db, IAuditedUnitOfWork unit) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            new PassThroughProtector(),
-            TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            unit);
+        NativeMfaComposition.Over(db, null, new PassThroughProtector(), unit);
 
     /// <summary>The local MFA step of a user whose password this request's pending ticket already verified.</summary>
     private AuthController MfaController(

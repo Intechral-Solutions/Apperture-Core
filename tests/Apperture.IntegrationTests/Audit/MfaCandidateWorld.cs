@@ -52,15 +52,8 @@ internal sealed class MfaCandidateWorld
         return other;
     }
 
-    public NativeMfaService Mfa(AppertureDbContext db) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            _protector,
-            TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            NewUnit(db, null));
+    /// <summary>The production service over <paramref name="db"/>, with the gate and the viability reads its administrative operations take.</summary>
+    public NativeMfaService Mfa(AppertureDbContext db) => NativeMfaComposition.Over(db, Scratch.Options(), _protector);
 
     public async Task<IReadOnlyList<string>> EnrollAsync(UserId id)
     {

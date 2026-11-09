@@ -1,9 +1,12 @@
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Core.Security.Secrets.Abstractions;
 using Apperture.Shared.Kernel;
+using Apperture.UnitTests.Accounts;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.UnitTests.Audit;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -11,7 +14,7 @@ using Xunit;
 
 namespace Apperture.UnitTests.ControlPlane;
 
-public sealed class NativeMfaServiceTests
+public sealed partial class NativeMfaServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 31, 18, 0, 0, TimeSpan.Zero);
 
@@ -88,7 +91,9 @@ public sealed class NativeMfaServiceTests
 
         var act = () => harness.Mfa.CompleteEnrollmentAsync(userId, code, AuditActor.EmergencyCli).AsTask();
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("changed while the code was being checked");
+        var conflict = (await act.Should().ThrowAsync<GovernanceConflictException>()).Which;
+        conflict.Code.Should().Be(GovernanceConflictCodes.AuthenticatorChanged, "a typed, retryable conflict: start the enrollment again");
+        conflict.Message.Should().Contain("changed while the code was being checked");
         (await harness.Mfa.IsEnrolledAsync(userId)).Should().BeFalse();
         harness.Recorder.Staged.Should().BeEmpty("nothing was committed");
     }
@@ -237,16 +242,57 @@ public sealed class NativeMfaServiceTests
     private sealed class Harness
     {
         public UserId UserId { get; } = new("usr-e");
-        public NativeMfaService Mfa { get; }
+        public NativeMfaService Mfa { get; private set; } = null!;
         public MemoryTotp Totp { get; } = new();
         public MemoryRecovery Recovery { get; } = new();
+        public MemoryCandidates Candidates { get; }
         public RecordingAuditedUnitOfWork Recorder { get; private set; } = new();
+        public RecordingAuditEventWriter Events { get; } = new();
+        public RecordingGate Gate { get; } = new();
+        public ScriptedViabilityReads Reads { get; private set; } = null!;
         public byte[]? PlaintextSecret { get; private set; }
         public IReadOnlyList<string> RecoveryCodes { get; private set; } = [];
         public FixedTime Clock { get; } = new(Now);
 
         private Harness()
         {
+            Candidates = new MemoryCandidates(this);
+            // By default an ordinary administrator who can sign in without Microsoft remains whatever the operation does, so a decision
+            // that reads no facts allows it; a case about the decision scripts its own states.
+            UseViability(ViabilityTestData.Same(["fallback-admin"], ["fallback-admin"]));
+        }
+
+        /// <summary>The accounts the cases name; the service loads the account before it changes anything of it.</summary>
+        private static InMemoryUserRepository Accounts() =>
+            new(new[] { "usr-e", "usr-stale", "usr-race", "usr-retry" }
+                .Select(id => new User(new UserId(id), id, [], [], IsBreakGlassEligible: false) { Username = id })
+                .ToArray());
+
+        /// <summary>
+        /// Makes the recording unit put the authenticator, the codes and the candidate back when an attempt rolls back (a refusal declares a
+        /// no-op after the change was applied, or the attempt throws), as the SQL unit does.
+        /// </summary>
+        public Harness RollingBack()
+        {
+            Recorder.CaptureState = () =>
+            {
+                var stored = Totp.Stored;
+                var codes = Recovery.Codes.ToList();
+                var candidate = Candidates.Candidate;
+                return () =>
+                {
+                    Totp.Replace(_ => stored!);
+                    Recovery.Restore(codes);
+                    Candidates.Candidate = candidate;
+                };
+            };
+            return this;
+        }
+
+        /// <summary>Rebuilds the service over the real coordinator and guard with the given states, read in order (the last repeats).</summary>
+        public Harness UseViability(params AdministratorViabilityState[] states)
+        {
+            Reads = new ScriptedViabilityReads(states);
             Mfa = new NativeMfaService(
                 Totp,
                 Recovery,
@@ -254,7 +300,12 @@ public sealed class NativeMfaServiceTests
                 new XorProtector(),
                 Clock,
                 NullLogger<NativeMfaService>.Instance,
-                new ForwardingUnit(this));
+                new ForwardingUnit(this),
+                new AdministratorViabilityCoordinator(Gate, Reads),
+                Events,
+                Accounts(),
+                Candidates);
+            return this;
         }
 
         public static Harness Create() => new();
@@ -382,8 +433,17 @@ public sealed class NativeMfaServiceTests
             return ValueTask.FromResult(true);
         }
 
+        /// <summary>Plays a tracked delete that finds the row changed since it was read (a sign-in recorded a step in between).</summary>
+        public bool ConcurrencyFailureOnNextDelete { get; set; }
+
         public ValueTask DeleteAsync(UserId userId, CancellationToken cancellationToken = default)
         {
+            if (ConcurrencyFailureOnNextDelete)
+            {
+                ConcurrencyFailureOnNextDelete = false;
+                throw new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("Injected: the credential row changed since it was read.");
+            }
+
             _stored = null;
             return ValueTask.CompletedTask;
         }
@@ -410,6 +470,14 @@ public sealed class NativeMfaServiceTests
             if (idx >= 0)
                 _codes[idx] = _codes[idx] with { ConsumedAtUtc = consumedAtUtc };
             return ValueTask.CompletedTask;
+        }
+
+        public IReadOnlyList<NativeMfaRecoveryCodeRecord> Codes => _codes;
+
+        public void Restore(IEnumerable<NativeMfaRecoveryCodeRecord> codes)
+        {
+            _codes.Clear();
+            _codes.AddRange(codes);
         }
 
         public ValueTask DeleteAllAsync(UserId userId, CancellationToken cancellationToken = default)

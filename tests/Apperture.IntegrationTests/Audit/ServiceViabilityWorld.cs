@@ -131,15 +131,11 @@ internal sealed class ServiceViabilityWorld
 
     public SqlAuditEventWriter Events() => new(Scratch.Options(), null, HarnessCatalog, null, null, null);
 
+    /// <summary>The protector both the active secrets and the candidates of these suites are protected with (one key, as in production).</summary>
+    public ManagementHost.IntegrationTestSecretProtector Protector { get; } = new();
+
     public NativeMfaService Mfa(AppertureDbContext db, IAuditedUnitOfWork? unit = null, IAdministratorViabilityCoordinator? coordinator = null, TimeProvider? time = null) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            new ManagementHost.IntegrationTestSecretProtector(),
-            time ?? TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            unit ?? NewUnit(db, null));
+        NativeMfaComposition.Over(db, Scratch.Options(), Protector, unit ?? NewUnit(db, null), coordinator ?? Coordinator(db), time);
 
     public EmergencyAccessService Emergency(AppertureDbContext db, IAuditedUnitOfWork? unit = null, IAdministratorViabilityCoordinator? coordinator = null) =>
         new(
@@ -193,7 +189,7 @@ internal sealed class ServiceViabilityWorld
             return fields;
         using var document = JsonDocument.Parse(details);
         foreach (var property in document.RootElement.EnumerateObject())
-            fields[property.Name] = property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.ToString();
+            fields[property.Name] = property.Value.ValueKind == JsonValueKind.String ? property.Value.GetString() : property.Value.GetRawText();
         return fields;
     }
 

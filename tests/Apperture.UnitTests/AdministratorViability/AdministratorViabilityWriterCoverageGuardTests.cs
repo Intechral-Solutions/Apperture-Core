@@ -35,8 +35,13 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         DesignationFlagUpdate,
         MfaReset,
         MfaEnrol,
+        MfaPendingWrite,
         MfaConsume,
         MfaStep,
+        MfaCandidateStage,
+        MfaCandidateVerify,
+        MfaCandidateSwitch,
+        MfaCandidateDiscard,
         PasswordSet,
         UsernameChange,
     }
@@ -117,10 +122,15 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
 
         // The designation flag and the posture inputs.
         new(Security + "EmergencyAccessService.cs", Writes.DesignationFlagUpdate, 1, Class.Reducer, "WP4B-C", "designate (both invariants) and revoke (strict) write the flag, through the one conditional setter, under the gate, decided last"),
-        new(Security + "NativeMfaService.cs", Writes.MfaReset, 2, Class.Reducer, "WP4B", "reset removes the TOTP credential and the recovery codes"),
-        new(Security + "NativeMfaService.cs", Writes.MfaEnrol, 4, Class.GatedRaiser, "WP4B", "enrolment and recovery-code regeneration only add"),
+        new(Security + "NativeMfaService.cs", Writes.MfaReset, 2, Class.Reducer, "WP4B-C", "the bare reset removes the TOTP credential and the recovery codes: under the gate, decided last on the posture or the Local reading"),
+        new(Security + "NativeMfaService.cs", Writes.MfaEnrol, 3, Class.GatedRaiser, "WP4B-C", "the first enrolment's conditional completion and the regeneration of the codes only add: under the gate, asserted raise-only"),
+        new(Security + "NativeMfaService.cs", Writes.MfaPendingWrite, 1, Class.OutOfCategory, "-", "a pending credential is not a posture input (the facts read only an enrolled one), and the conditional write never replaces an enrolled one (WP4B-A)"),
         new(Security + "NativeMfaService.cs", Writes.MfaConsume, 1, Class.RecoveryCodeConsumption, "-", "C-14: non-refusable, no gate"),
         new(Security + "NativeMfaService.cs", Writes.MfaStep, 1, Class.OutOfCategory, "-", "records the last verified TOTP step; no posture input reads it"),
+        new(Security + "NativeMfaService.cs", Writes.MfaCandidateStage, 1, Class.OutOfCategory, "-", "a staged candidate is not an authenticator: the facts read only the enrolled credential and its unused codes, which staging never touches"),
+        new(Security + "NativeMfaService.cs", Writes.MfaCandidateVerify, 1, Class.OutOfCategory, "-", "marking a candidate verified changes nothing the facts read"),
+        new(Security + "NativeMfaService.cs", Writes.MfaCandidateDiscard, 4, Class.OutOfCategory, "-", "removing a candidate (abandoned or expired) never touches the active authenticator or its codes"),
+        new(Security + "NativeMfaService.cs", Writes.MfaCandidateSwitch, 1, Class.Reducer, "WP4B-C", "the switch replaces the authenticator and its codes: under the gate, decided last on the posture alone, and only on the posture (I-R3-1)"),
 
         // Writers that cannot change a viability input.
         new(Security + "AccountInvitationService.cs", Writes.PasswordSet, 1, Class.OutOfCategory, "-", "SetPasswordAsync never writes IsDisabled on an existing credential, and a new credential is enabled"),
@@ -201,7 +211,8 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     // is not a writer of a viability input and is not counted here.
     private static readonly Regex DesignationSetterCall = R(@"\b(_users|_userRepository|userRepo|_userRepo)\.TrySetDesignationAsync\(");
     private static readonly Regex MfaResetCall = R(@"_totp\.DeleteAsync\(|_recoveryCodes\.DeleteAllAsync\(");
-    private static readonly Regex MfaEnrolCall = R(@"_totp\.(UpsertPendingAsync|MarkEnrolledAsync)\(|_recoveryCodes\.ReplaceAllAsync\(");
+    private static readonly Regex MfaEnrolCall = R(@"_totp\.MarkEnrolledAsync\(|_recoveryCodes\.ReplaceAllAsync\(");
+    private static readonly Regex MfaPendingWriteCall = R(@"_totp\.UpsertPendingAsync\(");
     private static readonly Regex MfaConsumeCall = R(@"_recoveryCodes\.MarkConsumedAsync\(");
     private static readonly Regex MfaStepCall = R(@"_totp\.UpdateLastUsedAsync\(");
     private static readonly Regex PasswordSetCall = R(@"\.SetPasswordAsync\(");
@@ -250,7 +261,16 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
 
             Add(file, Writes.MfaReset, MfaResetCall.Matches(code).Count);
             Add(file, Writes.MfaEnrol, MfaEnrolCall.Matches(code).Count);
+            Add(file, Writes.MfaPendingWrite, MfaPendingWriteCall.Matches(code).Count);
             Add(file, Writes.MfaConsume, MfaConsumeCall.Matches(code).Count);
+
+            // The replacement candidates, found by the type their receiver was declared with (U6): staging, verifying and removing a
+            // candidate change no posture input; the switch does.
+            var candidateStores = NamesHolding(code, "INativeMfaReplacementCandidateRepository");
+            Add(file, Writes.MfaCandidateStage, CallsOn(code, candidateStores, "StageAsync"));
+            Add(file, Writes.MfaCandidateVerify, CallsOn(code, candidateStores, "MarkVerifiedAsync"));
+            Add(file, Writes.MfaCandidateSwitch, CallsOn(code, candidateStores, "SwitchAsync"));
+            Add(file, Writes.MfaCandidateDiscard, CallsOn(code, candidateStores, "DiscardAsync"));
             Add(file, Writes.MfaStep, MfaStepCall.Matches(code).Count);
             Add(file, Writes.PasswordSet, PasswordSetCall.Matches(code).Count);
             Add(file, Writes.UsernameChange, UsernameChangeCall.Matches(code).Count);
@@ -378,12 +398,14 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     }
 
     [Fact]
-    public void A_pending_writer_does_not_yet_reference_the_gate_or_the_coordinator_and_no_file_is_both_pending_and_integrated()
+    public void Every_reducer_and_raiser_is_integrated_and_a_future_pending_writer_could_not_already_reference_the_gate()
     {
+        // WP4B-C integrated the last pending writers (Recovery Access and native MFA). A writer a later change classifies pending must not
+        // already reference the gate or the coordinator, so the pending list cannot go stale unnoticed.
         var pending = Inventory.Where(i => i.Pending).Select(i => i.File).Distinct().ToList();
         var integrated = Inventory.Where(i => i.Integrated).Select(i => i.File).Distinct().ToList();
 
-        pending.Should().NotBeEmpty();
+        pending.Should().BeEmpty("every reducer and gated raiser of administrator viability takes the gate now");
         integrated.Should().NotBeEmpty();
         pending.Intersect(integrated).Should().BeEmpty("a file is integrated or pending as a whole, so the method-level checks cannot miss a writer in it");
         foreach (var file in pending)
@@ -539,6 +561,25 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         // account and its credential; the assertion that nothing was reduced; the row.
         new(Security + "EmergencyAccessService.cs", "ProvisionAsync", Writes.UserCreatedWithRoleIds,
             ["Unit.ExecuteAsync(", TakeGate, "FindDesignatedEmergencyUserAsync(", "new User(", "CaptureBeforeForRaiseAsync(", "AddAsync(", ".SetPasswordAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+
+        // WP4B-C, native MFA. The bare reset, a reducer: the gate first; the account loaded; the no-op before the invariants; the state
+        // before; the removal of the authenticator and its codes; the decision last; a refusal through the one mapping; the row.
+        new(Security + "NativeMfaService.cs", "ResetAsync", Writes.MfaReset,
+            ["Unit.ExecuteRefusableAsync(", TakeGate, "AccountOfAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "_totp.DeleteAsync(", "_recoveryCodes.DeleteAllAsync(", "VerifyBareResetAsync(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
+
+        // The first enrolment's completion, a gated raiser: the gate first; the account loaded; the code checked; the state before; the
+        // conditional enrolment and the codes; the assertion; the rows.
+        new(Security + "NativeMfaService.cs", "CompleteEnrollmentAsync", Writes.MfaEnrol,
+            ["Unit.ExecuteAsync(", TakeGate, "AccountOfAsync(", "Rfc6238Totp.Verify(", "CaptureBeforeForRaiseAsync(", "_totp.MarkEnrolledAsync(", "_recoveryCodes.ReplaceAllAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+
+        // The regeneration of the codes, a gated raiser.
+        new(Security + "NativeMfaService.cs", "RegenerateRecoveryCodesAsync", Writes.MfaEnrol,
+            ["Unit.ExecuteAsync(", TakeGate, "AccountOfAsync(", "CaptureBeforeForRaiseAsync(", "_recoveryCodes.ReplaceAllAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+
+        // The switch, gated and net-judged: the gate first; the account loaded; the state before; the switch (inside the unit, never
+        // standalone); the decision last; a decision not made on the posture alone refused (I-R3-1); a posture refusal; only then the rows.
+        new(Security + "NativeMfaService.cs", "CompleteReplacementAsync", Writes.MfaCandidateSwitch,
+            ["Unit.ExecuteRefusableAsync(", TakeGate, "AccountOfAsync(", "CaptureBeforeAsync(", "Candidates.SwitchAsync(", "VerifyReplacementAsync(", "ViabilityDecisionBasis.PostureOnly", "ViabilityRefusalAudit.Blocked(", "decision.Refusal()", "StageAsync("]),
     ];
 
     private const string TakeGateOnly = ".EnterGateOnlyAsync(";
@@ -597,6 +638,9 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Writes.PolicySave => CallsOn(code, NamesHolding(fileCode, "IInstanceAuthUiPolicyRepository"), "SaveAsync"),
         Writes.UserCreatedWithRoleIds => NewUser.Matches(code).Count(m => !IsEmpty(RoleIdsArgument(code, m.Index + m.Length))),
         Writes.DesignationFlagUpdate => DesignationSetterCall.Matches(code).Count,
+        Writes.MfaReset => MfaResetCall.Matches(code).Count,
+        Writes.MfaEnrol => MfaEnrolCall.Matches(code).Count,
+        Writes.MfaCandidateSwitch => CallsOn(code, NamesHolding(fileCode, "INativeMfaReplacementCandidateRepository"), "SwitchAsync"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not an integrated write kind"),
     };
 
@@ -894,6 +938,39 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         MethodBody(code, "RevokeAsync").Should().Contain("var revoked = designated.Id;").And.Contain("VerifyRevocationAsync(revoked.Value");
         var setPassword = MethodBody(code, "SetLocalPasswordAsync");
         setPassword.Should().Contain(".SetPasswordAsync(user.Id").And.Contain("AuditEvents.PasswordSet(user.Id)");
+    }
+
+    [Fact]
+    public void The_replacement_holds_nothing_across_the_operators_input_and_switches_only_inside_the_unit()
+    {
+        // Staging and verifying a candidate take no gate, open no audited unit and read no viability state: nothing is held while the
+        // operator adds the new authenticator and types its code. The only switch is inside the audited unit, after the gate (S-1).
+        var code = StripComments(Source(Security + "NativeMfaService.cs"));
+        foreach (var method in new[] { "BeginReplacementAsync", "VerifyReplacementAsync", "AbandonReplacementAsync" })
+        {
+            MethodBody(code, method).Should().NotContainAny(
+                new[] { "EnterAsync(", "Unit.", "Viability", "CaptureBefore", "SwitchAsync(" },
+                $"{method} holds nothing across the operator's input and never switches");
+        }
+
+        Regex.Matches(code, @"\bCandidates\.SwitchAsync\(", RegexOptions.CultureInvariant).Count.Should().Be(1, "one switch, in CompleteReplacementAsync");
+        var complete = MethodBody(code, "CompleteReplacementAsync");
+        complete.IndexOf("Candidates.SwitchAsync(", StringComparison.Ordinal)
+            .Should().BeGreaterThan(complete.IndexOf("Unit.ExecuteRefusableAsync(", StringComparison.Ordinal), "the switch runs inside the audited unit");
+        complete.Should().NotContain("catch (Exception", "nothing inside the switch's unit is caught and continued after (S-2)");
+    }
+
+    [Fact]
+    public void The_native_mfa_administrative_operations_name_the_account_by_the_row_they_loaded()
+    {
+        // D-1: every administrative operation names the account by the id of the user row it loaded, from the one helper that loads it.
+        var code = StripComments(Source(Security + "NativeMfaService.cs"));
+        foreach (var method in new[] { "BeginEnrollmentAsync", "CompleteEnrollmentAsync", "RegenerateRecoveryCodesAsync", "ResetAsync", "BeginReplacementAsync", "VerifyReplacementAsync", "CompleteReplacementAsync", "AbandonReplacementAsync" })
+            MethodBody(code, method).Should().Contain("AccountOfAsync(userId", $"{method} loads the account first");
+
+        MethodBody(code, "AccountOfAsync").Should().Contain("Users.GetByIdAsync(").And.Contain(").Id");
+        MethodBody(code, "ResetAsync").Should().Contain("VerifyBareResetAsync(owner.Value").And.NotContain("VerifyBareResetAsync(userId");
+        MethodBody(code, "CompleteReplacementAsync").Should().Contain("VerifyReplacementAsync(owner.Value").And.Contain("codes.For(owner)");
     }
 
     // ---- Out of category ----

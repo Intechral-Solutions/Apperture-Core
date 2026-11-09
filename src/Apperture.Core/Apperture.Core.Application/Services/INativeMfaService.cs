@@ -31,9 +31,75 @@ public interface INativeMfaService
 
     ValueTask<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The bare reset: removes the account's authenticator and recovery codes with nothing in their place. A reducer of administrator
+    /// viability when it would take a healthy Recovery Access posture away; the replacement (<see cref="BeginReplacementAsync"/>) is the
+    /// normal way to change an authenticator.
+    /// </summary>
     ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default);
 
     ValueTask<int> CountUnusedRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Starts the non-destructive replacement of an enrolled authenticator: stages a candidate secret beside the active one and returns it
+    /// once, for the operator to add to an authenticator app. Nothing about the active authenticator or its recovery codes changes, no
+    /// lock is held across the operator's input, and an abandoned or expired candidate never disables the active authenticator.
+    /// </summary>
+    ValueTask<NativeMfaReplacementChallenge> BeginReplacementAsync(UserId userId, string accountName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Proves possession of the staged candidate: the code is checked against the candidate's secret, never the active one, and its step
+    /// is recorded so it cannot be replayed once the candidate is active. Changes nothing about the active authenticator. Returns the
+    /// version <see cref="CompleteReplacementAsync"/> must present.
+    /// </summary>
+    ValueTask<NativeMfaReplacementVerification> VerifyReplacementAsync(
+        UserId userId,
+        string candidateId,
+        int version,
+        string totpCode,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The switch: in one audited unit under the global administrator-set gate, makes the verified candidate the active authenticator and
+    /// replaces the recovery codes with a new set, returned once. Judged on its net effect on the Recovery Access posture alone; a decision
+    /// made on anything else rolls it back as a retryable conflict. The active authenticator stays in place on every refusal or failure.
+    /// </summary>
+    ValueTask<NativeMfaReplacementResult> CompleteReplacementAsync(
+        UserId userId,
+        string candidateId,
+        int version,
+        AuditActor actor,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Removes the account's staged replacement, if any: the operator abandoned it. Never touches the active authenticator.</summary>
+    ValueTask<bool> AbandonReplacementAsync(UserId userId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// A staged replacement of an enrolled authenticator, shown to the operator once: the candidate's identity and version (kept by the
+/// operator's process for the next steps), the secret to add to an authenticator app, and when the candidate expires by the database's
+/// clock. The candidate is not an authenticator until it is switched.
+/// </summary>
+public sealed record NativeMfaReplacementChallenge(
+    UserId UserId,
+    string CandidateId,
+    int Version,
+    string OtpAuthUri,
+    string ManualEntryKey,
+    DateTimeOffset ExpiresAtUtc);
+
+/// <summary>The candidate whose possession was proven, and the version the switch must present.</summary>
+public sealed record NativeMfaReplacementVerification(string CandidateId, int Version);
+
+/// <summary>
+/// The outcome of a switch. <see cref="RecoveryCodes"/> are the new codes, shown once. <see cref="AlreadyApplied"/> means this candidate's
+/// switch had already taken effect in an earlier request whose result was not received (verified against the active authenticator's
+/// identity, never assumed): its codes are the ones that request generated and cannot be shown again; regenerate them if they were lost.
+/// </summary>
+public sealed record NativeMfaReplacementResult(bool AlreadyApplied, IReadOnlyList<string> RecoveryCodes)
+{
+    /// <summary>The candidate's switch had already been applied by an earlier request; no codes can be shown.</summary>
+    public static NativeMfaReplacementResult AppliedEarlier { get; } = new(AlreadyApplied: true, RecoveryCodes: []);
 }
 
 /// <summary>

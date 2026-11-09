@@ -167,24 +167,40 @@ public sealed class SqlNativeMfaReplacementCandidateRepository : INativeMfaRepla
         if (request.RecoveryCodes.Any(c => !string.Equals(c.UserId.Value, user, StringComparison.Ordinal)))
             throw new ArgumentException("Every recovery code belongs to the user whose authenticator is switched.", nameof(request));
 
-        var newCredentialId = NewId();
+        // Checked before any statement, so a code set the inserts would refuse part-way through never reaches them (no savepoint protects a
+        // caller's transaction from a half-applied switch), and a set recorded as already used never leaves the posture without the codes
+        // the operator was shown.
+        if (request.RecoveryCodes.Any(c => c.ConsumedAtUtc is not null))
+            throw new ArgumentException("A switch issues new, unused recovery codes.", nameof(request));
+        if (request.RecoveryCodes.Select(c => c.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != request.RecoveryCodes.Count)
+            throw new ArgumentException("Every recovery code of a switch has an id of its own.", nameof(request));
+        if (request.RecoveryCodes.Any(c => !FitsStoredForm(c)))
+            throw new ArgumentException("A recovery code does not fit its stored form.", nameof(request));
+
         return await InTransactionAsync(
             async () =>
             {
-                var active = await LockActiveCredentialAsync(user, cancellationToken);
+                var active = await LockActiveCredentialWithOwnerAsync(user, cancellationToken);
                 if (active is null)
                     return new NativeMfaSwitchResult(NativeMfaCandidateOutcome.NoActiveEnrollment, null);
 
+                // The database finds the row whatever the case of the id; the decision that judges the switch compares ids ordinally. A
+                // caller that names the user other than as stored is a defect, and nothing is written.
+                if (!string.Equals(active.UserId, user, StringComparison.Ordinal))
+                    throw new ArgumentException("The switch must name the user by the id it is stored under.", nameof(request));
+
                 // One statement decides: it reads the candidate (locked) and the active row, and writes only when every condition holds.
+                // The candidate's own id becomes the identity of the new active secret, so whoever switched it can tell afterwards
+                // whether this candidate's switch is the active authenticator (a lost acknowledgement, a second request).
                 var switched = await _db.Database.ExecuteSqlInterpolatedAsync(
                     $"""
                     UPDATE t
                        SET t.[ProtectedSecret] = c.[ProtectedSecret], t.[ProtectorKeyId] = c.[ProtectorKeyId],
                            t.[LastUsedStep] = c.[MatchedStep], t.[EnrolledAtUtc] = {request.SwitchedAtUtc},
-                           t.[LastVerifiedAtUtc] = {request.SwitchedAtUtc}, t.[CredentialId] = {newCredentialId}
+                           t.[LastVerifiedAtUtc] = {request.SwitchedAtUtc}, t.[CredentialId] = c.[CandidateId]
                       FROM [UserTotpCredentials] AS t
                      INNER JOIN [UserTotpReplacementCandidates] AS c WITH (UPDLOCK, HOLDLOCK) ON c.[UserId] = t.[UserId]
-                     WHERE t.[UserId] = {user} AND t.[IsEnrolled] = 1 AND t.[CredentialId] = {active}
+                     WHERE t.[UserId] = {user} AND t.[IsEnrolled] = 1 AND t.[CredentialId] = {active.CredentialId}
                        AND c.[CandidateId] = {request.CandidateId}
                        AND c.[Status] = 1 AND c.[Version] = {request.ExpectedVersion}
                        AND c.[ExpiresAtUtc] > SYSUTCDATETIME()
@@ -194,7 +210,7 @@ public sealed class SqlNativeMfaReplacementCandidateRepository : INativeMfaRepla
                 if (switched != 1)
                 {
                     return new NativeMfaSwitchResult(
-                        await DiagnoseAsync(user, request.CandidateId, request.ExpectedVersion, active, switching: true, cancellationToken),
+                        await DiagnoseAsync(user, request.CandidateId, request.ExpectedVersion, active.CredentialId, switching: true, cancellationToken),
                         null);
                 }
 
@@ -223,9 +239,39 @@ public sealed class SqlNativeMfaReplacementCandidateRepository : INativeMfaRepla
                         cancellationToken);
                 }
 
+                // The identity the switch gave the active secret, as stored (the locks taken above are still held).
+                var newCredentialId = (await _db.Database
+                    .SqlQuery<string>($"SELECT [CredentialId] AS [Value] FROM [UserTotpCredentials] WHERE [UserId] = {user}")
+                    .ToListAsync(cancellationToken)).Single();
                 return new NativeMfaSwitchResult(NativeMfaCandidateOutcome.Applied, newCredentialId);
             },
             cancellationToken);
+    }
+
+    /// <summary>The stored form of a recovery code: the column lengths of the recovery-code table.</summary>
+    private static bool FitsStoredForm(NativeMfaRecoveryCodeRecord code) =>
+        !string.IsNullOrWhiteSpace(code.Id) && code.Id.Length <= 64
+        && !string.IsNullOrEmpty(code.CodeHash) && code.CodeHash.Length <= 512
+        && !string.IsNullOrEmpty(code.Salt) && code.Salt.Length <= 256
+        && !string.IsNullOrEmpty(code.Algorithm) && code.Algorithm.Length <= 64;
+
+    /// <summary>
+    /// As <see cref="LockActiveCredentialAsync"/> (the first lock of the order, <c>UPDLOCK, HOLDLOCK</c>), with the owner id as the row
+    /// stores it, for the switch to compare ordinally with the id it was given.
+    /// </summary>
+    private async Task<LockedCredential?> LockActiveCredentialWithOwnerAsync(string user, CancellationToken cancellationToken)
+    {
+        var rows = await _db.Database
+            .SqlQuery<LockedCredential>($"SELECT [UserId], [CredentialId] FROM [UserTotpCredentials] WITH (UPDLOCK, HOLDLOCK) WHERE [UserId] = {user} AND [IsEnrolled] = 1")
+            .ToListAsync(cancellationToken);
+        return rows.Count == 0 ? null : rows[0];
+    }
+
+    /// <summary>The locked active credential's stored owner and identity.</summary>
+    private sealed class LockedCredential
+    {
+        public string UserId { get; set; } = "";
+        public string CredentialId { get; set; } = "";
     }
 
     /// <inheritdoc />

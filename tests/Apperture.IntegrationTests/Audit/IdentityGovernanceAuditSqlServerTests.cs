@@ -566,15 +566,9 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             RoleAuthorityWorld.Viability(db),
             new SqlAuditEventWriter(_db.Options(), null, HarnessCatalog, null, null, null));
 
-    private static NativeMfaService Mfa(AppertureDbContext db) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            new IdentityProtector(),
-            TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            NewUnit(db, null));
+    /// <summary>The production service (IAM-10.2b WP4B-C): a regeneration of the codes takes the global gate and asserts it only added.</summary>
+    private NativeMfaService Mfa(AppertureDbContext db) =>
+        NativeMfaComposition.Over(db, _db.Options(), new IdentityProtector());
 
     /// <summary>The recovery service resolves its repositories and unit from a scope, as the host does.</summary>
     private RealBootstrapRecoveryService Recovery(AppertureDbContext db)
@@ -620,6 +614,10 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         public ValueTask<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<int> CountUnusedRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+        public ValueTask<NativeMfaReplacementChallenge> BeginReplacementAsync(UserId userId, string accountName, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<NativeMfaReplacementVerification> VerifyReplacementAsync(UserId userId, string candidateId, int version, string totpCode, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<NativeMfaReplacementResult> CompleteReplacementAsync(UserId userId, string candidateId, int version, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> AbandonReplacementAsync(UserId userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class AuthorizedRecovery : Apperture.Bootstrap.IBootstrapRecoveryAuthorizer

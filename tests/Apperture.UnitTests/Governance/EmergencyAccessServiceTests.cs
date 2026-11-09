@@ -719,5 +719,13 @@ public sealed partial class EmergencyAccessServiceTests
         public ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<int> CountUnusedRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(UnusedCodes.GetValueOrDefault(userId.Value));
+        public ValueTask<NativeMfaReplacementChallenge> BeginReplacementAsync(UserId userId, string accountName, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+        public ValueTask<NativeMfaReplacementVerification> VerifyReplacementAsync(UserId userId, string candidateId, int version, string totpCode, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+        public ValueTask<NativeMfaReplacementResult> CompleteReplacementAsync(UserId userId, string candidateId, int version, AuditActor actor, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+        public ValueTask<bool> AbandonReplacementAsync(UserId userId, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
     }
 }

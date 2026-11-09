@@ -537,7 +537,8 @@ internal static class AuditActionCatalogEntries
         },
         new()
         {
-            // Declared with its producer and schema; no service writes it yet. The switch commits it with the new authenticator.
+            // The switch of the non-destructive replacement commits it with the new authenticator and its codes, in one audited unit,
+            // with the evidence class of its posture-only decision.
             Action = "auth.mfa.replaced",
             Category = AuditCategories.Identity,
             Severity = AuditSeverities.Elevated,

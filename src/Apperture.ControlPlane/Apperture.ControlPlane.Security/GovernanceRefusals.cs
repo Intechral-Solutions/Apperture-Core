@@ -56,6 +56,13 @@ public class GovernanceConflictException : Exception
         Code = code;
     }
 
+    /// <summary>A conflict that a lower layer reported in its own terms (a concurrency failure of a write), kept as the cause.</summary>
+    public GovernanceConflictException(string code, string message, Exception? innerException)
+        : base(message, innerException)
+    {
+        Code = code;
+    }
+
     public string Code { get; }
 }
 
@@ -85,6 +92,28 @@ public static class GovernanceConflictCodes
     /// so nothing was changed and the active authenticator stays in place.
     /// </summary>
     public const string RecoveryAccessPostureReduced = "recovery_access_posture_reduced";
+
+    /// <summary>
+    /// An authenticator replacement was not judged on the Recovery Access posture alone, because administrator access changed while it
+    /// ran (another change moved an administrator's sign-in facts between the state before and the state after). Nothing was changed and
+    /// the active authenticator stays in place; running the replacement again judges it afresh. Retryable.
+    /// </summary>
+    public const string AdministratorAccessChanged = "administrator_access_changed";
+
+    /// <summary>The account's authenticator changed while this request ran (another change committed first), so nothing was changed. Retryable.</summary>
+    public const string AuthenticatorChanged = "authenticator_changed";
+
+    /// <summary>The account has no enrolled authenticator, so there is nothing to replace; nothing was changed. Enroll one instead.</summary>
+    public const string AuthenticatorNotEnrolled = "authenticator_not_enrolled";
+
+    /// <summary>
+    /// The replacement named is no longer one that can complete: a newer one was started, it was already used, or it changed while the code
+    /// was being checked. Nothing was changed; start the replacement again.
+    /// </summary>
+    public const string AuthenticatorReplacementNoLongerValid = "authenticator_replacement_no_longer_valid";
+
+    /// <summary>The replacement expired before it completed, so nothing was changed and it was removed; start the replacement again.</summary>
+    public const string AuthenticatorReplacementExpired = "authenticator_replacement_expired";
 }
 
 /// <summary>

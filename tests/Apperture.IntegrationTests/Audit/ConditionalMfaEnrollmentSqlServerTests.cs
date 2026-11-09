@@ -140,8 +140,11 @@ public sealed class ConditionalMfaEnrollmentSqlServerTests : IClassFixture<Audit
             var replacedSecret = await world.ActiveSecretHashAsync();
             pause.Release();
 
+            // IAM-10.2b WP4B-C (L-P2): the failure is the typed, retryable conflict, and the unit rolled back.
             var act = async () => await enrolment.WaitAsync(Patience);
-            (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should().Contain("changed while the code was being checked");
+            var conflict = (await act.Should().ThrowAsync<Apperture.ControlPlane.Security.GovernanceConflictException>()).Which;
+            conflict.Code.Should().Be(Apperture.ControlPlane.Security.GovernanceConflictCodes.AuthenticatorChanged);
+            conflict.Message.Should().Contain("changed while the code was being checked");
 
             (await world.Scratch.ScalarAsync<bool>($"SELECT IsEnrolled FROM UserTotpCredentials WHERE UserId = N'{world.UserId.Value}';")).Should().BeFalse("nothing was enrolled");
             (await world.ActiveSecretHashAsync()).Should().Be(replacedSecret, "the pending secret is the one the later begin wrote");

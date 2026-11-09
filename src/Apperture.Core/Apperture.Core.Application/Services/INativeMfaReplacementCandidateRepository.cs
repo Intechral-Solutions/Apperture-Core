@@ -58,7 +58,10 @@ public interface INativeMfaReplacementCandidateRepository
     /// The switch: in one atomic step, makes the verified candidate's secret the user's active secret, replaces the active recovery
     /// codes with <see cref="NativeMfaSwitchRequest.RecoveryCodes"/> and consumes the candidate. It is applied only when the
     /// candidate is verified, unexpired by the database's clock, at the presented version, of this user, and was staged against the
-    /// credential that is active now; then the active credential gets a new <see cref="NativeTotpStoredCredential.CredentialId"/>.
+    /// credential that is active now; then the active credential's <see cref="NativeTotpStoredCredential.CredentialId"/> becomes the
+    /// candidate's id, so that whoever switched it can tell afterwards whether this candidate's switch is the active authenticator (a
+    /// <see cref="NativeMfaCandidateOutcome.Consumed"/> result alone does not say so). The user must be named by the id it is stored under,
+    /// and the codes must be new, unused, distinct and of the stored form; anything else is refused before any statement.
     /// </summary>
     ValueTask<NativeMfaSwitchResult> SwitchAsync(NativeMfaSwitchRequest request, CancellationToken cancellationToken = default);
 

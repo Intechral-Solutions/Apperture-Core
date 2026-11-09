@@ -112,7 +112,7 @@ public sealed class MfaReplacementCandidateLockOrderSqlServerTests : IClassFixtu
         var run = await InterleaveAsync(world.Scratch, pause, stage, () => RunSide(deleter.ToString(), deleterLog, async () =>
         {
             await using var db = Db(world.Scratch, OtherApplication, retry, deleterLog);
-            return await RunDeleterAsync(deleter, db, user);
+            return await RunDeleterAsync(deleter, world.Scratch, db, user);
         }));
 
         var rows = await CandidatesAsync(world.Scratch, user);
@@ -201,7 +201,7 @@ public sealed class MfaReplacementCandidateLockOrderSqlServerTests : IClassFixtu
         var run = await InterleaveAsync(world.Scratch, pause, stage, () => RunSide($"{deleter}(user2)", deleterLog, async () =>
         {
             await using var db = Db(world.Scratch, OtherApplication, retry, deleterLog);
-            return await RunDeleterAsync(deleter, db, user2);
+            return await RunDeleterAsync(deleter, world.Scratch, db, user2);
         }));
 
         var rows1 = await CandidatesAsync(world.Scratch, user1);
@@ -282,7 +282,7 @@ public sealed class MfaReplacementCandidateLockOrderSqlServerTests : IClassFixtu
         var run = await InterleaveAsync(world.Scratch, pause, switching, () => RunSide(deleter.ToString(), deleterLog, async () =>
         {
             await using var db = Db(world.Scratch, OtherApplication, retry, deleterLog);
-            return await RunDeleterAsync(deleter, db, user);
+            return await RunDeleterAsync(deleter, world.Scratch, db, user);
         }));
 
         var rows = await CandidatesAsync(world.Scratch, user);
@@ -467,15 +467,15 @@ public sealed class MfaReplacementCandidateLockOrderSqlServerTests : IClassFixtu
                  && c.CommandText.Contains("[UserTotpReplacementCandidates]", StringComparison.Ordinal)
                  && c.CommandText.Contains("[Status] >= 2", StringComparison.Ordinal), after: true);
 
-    private static async Task<(bool Ok, string Detail)> RunDeleterAsync(Deleter deleter, AppertureDbContext db, UserId user)
+    private static async Task<(bool Ok, string Detail)> RunDeleterAsync(Deleter deleter, AuditSqlScratch scratch, AppertureDbContext db, UserId user)
     {
         switch (deleter)
         {
             case Deleter.RegenerateRecoveryCodes:
-                var regenerated = await Service(db).RegenerateRecoveryCodesAsync(user, AuditActor.EmergencyCli);
+                var regenerated = await Service(scratch, db).RegenerateRecoveryCodesAsync(user, AuditActor.EmergencyCli);
                 return (true, $"regenerated {regenerated.Count} codes");
             case Deleter.ResetMfa:
-                await Service(db).ResetAsync(user, AuditActor.EmergencyCli);
+                await Service(scratch, db).ResetAsync(user, AuditActor.EmergencyCli);
                 return (true, "reset");
             case Deleter.DeleteAllRecoveryCodes:
                 await OwnTransactionAsync(db, async () => await new SqlNativeMfaRecoveryCodeRepository(db).DeleteAllAsync(user));
@@ -489,15 +489,12 @@ public sealed class MfaReplacementCandidateLockOrderSqlServerTests : IClassFixtu
         }
     }
 
-    private static NativeMfaService Service(AppertureDbContext db) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            new ManagementHost.IntegrationTestSecretProtector(),
-            TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            AuditRecorderTestSupport.NewUnit(db, null));
+    /// <summary>
+    /// The production service (IAM-10.2b WP4B-C): a regeneration and a reset take the global gate before the credential row. Neither the
+    /// staging nor the switch of these cases takes the gate, so the gate adds no wait to the interleavings, which stay about the rows.
+    /// </summary>
+    private static NativeMfaService Service(AuditSqlScratch scratch, AppertureDbContext db) =>
+        NativeMfaComposition.Over(db, scratch.Options(), new ManagementHost.IntegrationTestSecretProtector());
 
     private sealed record CandidateObservation(string Id, int Status, long SecretBytes, string SecretHash)
     {
