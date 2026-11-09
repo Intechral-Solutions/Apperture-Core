@@ -339,13 +339,18 @@ public sealed class NativeMfaServiceViabilitySqlServerTests : IClassFixture<Audi
     public async Task A_replacement_named_with_a_differently_cased_id_switches_and_records_the_stored_account(bool rcsi)
     {
         var e = await RecoveryAsync(rcsi, fallback: "none");
+        // Three of the old codes were used, so the switch raises the unused count (7 to 10). Only a decision given the stored id sees that
+        // as the Recovery Access account's own authenticator changing (D-1): for any other spelling it is a rise in another account's
+        // codes, which no posture-only rule admits, and the decision falls through to the full evaluation, which keeps no switch.
+        await e.W.Scratch.ExecuteAsync($"UPDATE TOP (3) UserMfaRecoveryCodes SET ConsumedAtUtc = SYSDATETIMEOFFSET() WHERE UserId = N'{e.Id}';");
         var spelled = e.Id.ToUpperInvariant();
         spelled.Should().NotBe(e.Id);
         var (challenge, version, _) = await StageAndVerifyAsync(e, spelled);
 
         await CompleteAsync(e, challenge.CandidateId, version, spelled);
 
-        (await e.W.RowsAsync(AuditActionNames.MfaReplaced, e.Id)).Should().ContainSingle();
+        (await e.W.RowsAsync(AuditActionNames.MfaReplaced, e.Id)).Should().ContainSingle()
+            .Which.Fields[ConfigurationEvidenceNames.AuditDetailName].Should().Be(ConfigurationEvidenceNames.NotRequired, "decided on the posture alone");
         (await e.W.Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM UserMfaRecoveryCodes WHERE UserId COLLATE Latin1_General_BIN2 = N'{e.Id}';")).Should().Be(10,
             "every new code belongs to the user as stored");
         (await e.W.Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM UserTotpReplacementCandidates WHERE UserId COLLATE Latin1_General_BIN2 <> N'{e.Id}';")).Should().Be(0);
