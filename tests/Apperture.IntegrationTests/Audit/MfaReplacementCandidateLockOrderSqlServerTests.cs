@@ -342,6 +342,117 @@ public sealed class MfaReplacementCandidateLockOrderSqlServerTests : IClassFixtu
         }
     }
 
+    // ---- Staging for one user against staging for another (the staging's own statements seek) ----
+
+    public static IEnumerable<object[]> ModeAndRetry()
+    {
+        foreach (var rcsi in new[] { false, true })
+        foreach (var retry in new[] { false, true })
+            yield return new object[] { rcsi, retry };
+    }
+
+    [Theory]
+    [MemberData(nameof(ModeAndRetry))]
+    public async Task Two_stagings_of_different_users_never_wait_for_or_deadlock_with_each_other(bool rcsi, bool retry)
+    {
+        // As the cross-user case above, with another user's staging in place of the deleter: its history purge and supersede must
+        // seek on user 2's rows. A staging that scanned would wait for user 1's history row, and the resumed staging of user 1 for
+        // user 2's rows.
+        var world = await WorldAsync(rcsi);
+        var user1 = world.UserId;
+        var user2 = await world.OtherEnrolledUserAsync();
+        var credential1 = await world.ActiveCredentialIdAsync(user1);
+        var credential2 = await world.ActiveCredentialIdAsync(user2);
+        var tag = Guid.NewGuid().ToString("N")[..24];
+        await SeedCandidateAsync(world.Scratch, "00000000" + tag, user2, 0, 1, (await world.NewSecretAsync()).Protected, credential2, null);
+        await SeedCandidateAsync(world.Scratch, "00000001" + tag, user2, 3, 3, [], credential2, 1);
+        await SeedCandidateAsync(world.Scratch, "77777777" + tag, user1, 0, 1, (await world.NewSecretAsync()).Protected, credential1, null);
+        await SeedCandidateAsync(world.Scratch, "ffffffff" + tag, user1, 3, 3, [], credential1, 1);
+        var secret1 = (await world.NewSecretAsync()).Protected;
+        var secret2 = (await world.NewSecretAsync()).Protected;
+
+        var pause = AfterStageHistoryPurge();
+        var log1 = new RoleAuthorityWorld.DeadlockLog();
+        var log2 = new RoleAuthorityWorld.DeadlockLog();
+        var stage1 = RunSide("stage(user1)", log1, async () =>
+        {
+            await using var db = Db(world.Scratch, ParkedApplication, retry, log1, pause);
+            var result = await new SqlNativeMfaReplacementCandidateRepository(db).StageAsync(user1, secret1, NativeMfaService.TotpProtectorKeyId, TimeSpan.FromMinutes(10));
+            return (result.IsApplied, result.Outcome.ToString());
+        });
+
+        var run = await InterleaveAsync(world.Scratch, pause, stage1, () => RunSide("stage(user2)", log2, async () =>
+        {
+            await using var db = Db(world.Scratch, OtherApplication, retry, log2);
+            var result = await new SqlNativeMfaReplacementCandidateRepository(db).StageAsync(user2, secret2, NativeMfaService.TotpProtectorKeyId, TimeSpan.FromMinutes(10));
+            return (result.IsApplied, result.Outcome.ToString());
+        }));
+
+        Record($"stage vs stage rcsi={rcsi} retry={retry}");
+        RecordRun(run);
+        (run.Parked.Deadlocked || run.Other.Deadlocked).Should().BeFalse($"two users' stagings share no row ({run.Parked}; {run.Other})");
+        run.OtherWhenReleased.Should().Be(OtherState.Finished,
+            $"user 2's staging seeks its own rows and never waits for user 1's (requests while parked: {run.RequestsWhileParked})");
+        run.Parked.Succeeded.Should().BeTrue();
+        run.Other.Succeeded.Should().BeTrue();
+        foreach (var (user, secret) in new[] { (user1, secret1), (user2, secret2) })
+        {
+            var rows = await CandidatesAsync(world.Scratch, user);
+            rows.Should().HaveCount(2, "history purged, the live candidate superseded, the new one staged");
+            rows.Single(r => r.SecretHash == MfaCandidateWorld.HashOf(secret)).Status.Should().Be(0);
+            rows.Single(r => r.SecretHash != MfaCandidateWorld.HashOf(secret)).Should().Match<CandidateObservation>(r => r.Status == 2 && r.SecretBytes == 0);
+        }
+    }
+
+    // ---- A removal outside any transaction (the discard an abandoned replacement calls) ----
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_discard_outside_any_transaction_holds_the_users_credential_row_until_its_candidates_are_removed(bool rcsi)
+    {
+        // The discard runs with no transaction of the caller's, so it opens its own: the credential row it took first is held until
+        // the candidates are gone. Parked between the two statements, it must keep a staging of the same user waiting. Were the lock
+        // taken in a statement of its own, it would be released at once and the staging would interleave between the two statements.
+        var world = await WorldAsync(rcsi);
+        var user = world.UserId;
+        var credential = await world.ActiveCredentialIdAsync();
+        var (low, high) = Keys();
+        await SeedCandidateAsync(world.Scratch, low, user, 0, 1, (await world.NewSecretAsync()).Protected, credential, null);
+        await SeedCandidateAsync(world.Scratch, high, user, 3, 3, [], credential, 1);
+        var stageSecret = (await world.NewSecretAsync()).Protected;
+
+        var pause = new RoleAuthorityWorld.PauseAt(
+            c => c.CommandText.Contains("[UserTotpCredentials] WITH (UPDLOCK, HOLDLOCK)", StringComparison.Ordinal), after: true);
+        var discardLog = new RoleAuthorityWorld.DeadlockLog();
+        var stageLog = new RoleAuthorityWorld.DeadlockLog();
+        var discard = RunSide("discard", discardLog, async () =>
+        {
+            await using var db = Db(world.Scratch, ParkedApplication, retry: false, discardLog, pause);
+            db.Database.CurrentTransaction.Should().BeNull("precondition: the caller has no transaction");
+            var removed = await new SqlNativeMfaReplacementCandidateRepository(db).DiscardAsync(user);
+            return (true, $"discarded {removed}");
+        });
+
+        var run = await InterleaveAsync(world.Scratch, pause, discard, () => RunSide("stage", stageLog, async () =>
+        {
+            await using var db = Db(world.Scratch, OtherApplication, retry: false, stageLog);
+            var result = await new SqlNativeMfaReplacementCandidateRepository(db).StageAsync(user, stageSecret, NativeMfaService.TotpProtectorKeyId, TimeSpan.FromMinutes(10));
+            return (result.IsApplied, result.Outcome.ToString());
+        }));
+
+        Record($"standalone discard rcsi={rcsi}");
+        RecordRun(run);
+        (run.Parked.Deadlocked || run.Other.Deadlocked).Should().BeFalse($"{run.Parked}; {run.Other}");
+        run.OtherWhenReleased.Should().Be(OtherState.WaitingOnLock, "the discard still holds the user's credential row");
+        run.Parked.Should().Match<Side>(s => s.Succeeded && s.Detail == "discarded 2");
+        run.Other.Succeeded.Should().BeTrue();
+        var rows = await CandidatesAsync(world.Scratch, user);
+        rows.Should().ContainSingle("the discard removed both seeded rows before the staging ran")
+            .Which.Should().Match<CandidateObservation>(r => r.Status == 0 && r.SecretHash == MfaCandidateWorld.HashOf(stageSecret));
+    }
+
+    public static IEnumerable<object[]> BothModes() => new[] { new object[] { false }, new object[] { true } };
+
     // ---- Arrangement and observation ----
 
     private async Task<MfaCandidateWorld> WorldAsync(bool rcsi)
