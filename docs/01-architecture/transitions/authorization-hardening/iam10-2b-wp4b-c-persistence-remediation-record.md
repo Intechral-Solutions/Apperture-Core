@@ -144,7 +144,7 @@ The review's own evidence is untouched: `G:\Backup\Apperture-Core-worktree-evide
 - the honesty report, TRX and logs;
 - the helper scripts: the SQL runner, the mutation harness and the probe adapter.
 
-A verified recovery bundle of the branch at its final commit goes to `G:\Backup\Apperture-Core-git-bundles-integration\integration-iam10-2b-wp4bc-persistence-<head>.bundle`. Its hash is in `SHA256SUMS.txt` there and in the hand-over message. Before archiving, the evidence is scanned for the test connection string and its password.
+A verified recovery bundle of the branch at its final commit goes to `G:\Backup\Apperture-Core-git-bundles-integration\integration-iam10-2b-wp4bc-persistence-<head>.bundle`. Its hash is in `SHA256SUMS-2026-11-09-remediation.txt` there and in the hand-over message. Before archiving, the evidence is scanned for the test connection string and its password.
 
 ## 10. Scope for closure verification
 
