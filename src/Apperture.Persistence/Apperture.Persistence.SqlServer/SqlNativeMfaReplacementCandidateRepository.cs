@@ -11,8 +11,12 @@ namespace Apperture.Persistence.SqlServer;
 /// credential it was staged against. A read made earlier by the caller is only ever advice: nothing here trusts it.</para>
 /// <para><b>Concurrency.</b> Staging, verifying and switching first take the user's credential row with
 /// <c>UPDLOCK, HOLDLOCK</c> (which takes locks under READ_COMMITTED_SNAPSHOT as well), so two of them for one user never
-/// interleave their reads and writes; the candidate row is then taken the same way. Operator input happens between calls, never
-/// inside one. The filtered unique index on live candidates remains the last arbiter if a lock were ever bypassed.</para>
+/// interleave their reads and writes; the candidate row is then taken the same way. Every writer that removes candidates (discard,
+/// a reset, a recovery-code replacement or removal) takes the same credential row first, so no two of them can hold candidate rows
+/// in opposite orders. Every user-scoped candidate statement seeks (<c>FORCESEEK</c>, on the unfiltered <c>UserId</c> index or the
+/// filtered one), so it never reads, and never waits for, another user's rows; the hint is required because on a small table the
+/// optimizer chooses a clustered scan even when the index exists. Operator input happens between calls, never inside one. The filtered unique index on live
+/// candidates remains the last arbiter if a lock were ever bypassed.</para>
 /// <para><b>Failure writes nothing.</b> When a conditional write changes no row, the cause is read under the same locks and
 /// reported; no statement after the failed one runs, so a refused switch leaves the active credential and its recovery codes
 /// untouched even inside a caller's transaction that goes on to commit.</para>
@@ -66,14 +70,20 @@ public sealed class SqlNativeMfaReplacementCandidateRepository : INativeMfaRepla
                     return new NativeMfaCandidateStageResult(NativeMfaCandidateOutcome.NoActiveEnrollment, null);
 
                 // Lazy purge of history, then the live candidate (if any) is superseded and loses its secret: it can never be switched.
+                // Both seek on the user's rows (FORCESEEK): on a small table the optimizer would otherwise scan the clustered index and
+                // wait for, and lock, other users' rows, which formed a cross-user lock cycle with another user's candidate removal.
                 await _db.Database.ExecuteSqlInterpolatedAsync(
-                    $"DELETE FROM [UserTotpReplacementCandidates] WHERE [UserId] = {user} AND [Status] >= 2;",
+                    $"""
+                    DELETE c FROM [UserTotpReplacementCandidates] AS c WITH (FORCESEEK)
+                     WHERE c.[UserId] = {user} AND c.[Status] >= 2;
+                    """,
                     cancellationToken);
                 await _db.Database.ExecuteSqlInterpolatedAsync(
                     $"""
-                    UPDATE [UserTotpReplacementCandidates]
-                       SET [Status] = 2, [Version] = [Version] + 1, [ProtectedSecret] = 0x
-                     WHERE [UserId] = {user} AND [Status] < 2;
+                    UPDATE c
+                       SET c.[Status] = 2, c.[Version] = c.[Version] + 1, c.[ProtectedSecret] = 0x
+                      FROM [UserTotpReplacementCandidates] AS c WITH (FORCESEEK)
+                     WHERE c.[UserId] = {user} AND c.[Status] < 2;
                     """,
                     cancellationToken);
                 await _db.Database.ExecuteSqlInterpolatedAsync(
@@ -219,10 +229,9 @@ public sealed class SqlNativeMfaReplacementCandidateRepository : INativeMfaRepla
     }
 
     /// <inheritdoc />
+    /// <remarks>The same removal as a reset or a code replacement performs: the user's credential row is taken first, then the candidates.</remarks>
     public async ValueTask<int> DiscardAsync(UserId userId, CancellationToken cancellationToken = default) =>
-        await _db.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM [UserTotpReplacementCandidates] WHERE [UserId] = {userId.Value};",
-            cancellationToken);
+        await SqlNativeTotpCredentialRepository.RemoveCandidatesAsync(_db, userId, cancellationToken);
 
     /// <summary>
     /// Takes the user's enrolled credential row (<c>UPDLOCK, HOLDLOCK</c>) and returns its identity, or null when the user has none.

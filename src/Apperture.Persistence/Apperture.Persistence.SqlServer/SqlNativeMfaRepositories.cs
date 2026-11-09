@@ -100,14 +100,34 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
         return enrolled == 1;
     }
 
-    public async ValueTask UpdateLastUsedAsync(UserId userId, long lastUsedStep, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async ValueTask<bool> UpdateLastUsedAsync(
+        UserId userId,
+        string expectedCredentialId,
+        long matchedStep,
+        DateTimeOffset verifiedAtUtc,
+        CancellationToken cancellationToken = default)
     {
-        var entity = await _db.UserTotpCredentials.FirstOrDefaultAsync(e => e.UserId == userId.Value, cancellationToken);
-        if (entity is null)
-            return;
-        entity.LastUsedStep = lastUsedStep;
-        entity.LastVerifiedAtUtc = verifiedAtUtc;
-        await _db.SaveChangesAsync(cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedCredentialId);
+
+        // One statement, whose condition the database evaluates as it writes (an UPDATE reads the committed row under its update
+        // lock in both isolation modes, so a concurrent writer is waited for and then re-checked, never overwritten):
+        // - the identity: a sign-in that checked its code against a secret since replaced (a switch) or removed (a reset and a new
+        //   enrolment) records nothing and must fail, so a code of a retired authenticator never completes a sign-in;
+        // - the monotonic step: a step at or below the recorded one was already consumed (by a concurrent sign-in with the same
+        //   code, or by the switch, which records the step its candidate's verification code matched), so it is never accepted again
+        //   and the recorded step never moves backwards.
+        var updated = await _db.UserTotpCredentials
+            .Where(e => e.UserId == userId.Value
+                        && e.IsEnrolled
+                        && e.CredentialId == expectedCredentialId
+                        && (e.LastUsedStep == null || e.LastUsedStep < matchedStep))
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(e => e.LastUsedStep, (long?)matchedStep)
+                    .SetProperty(e => e.LastVerifiedAtUtc, (DateTimeOffset?)verifiedAtUtc),
+                cancellationToken);
+        return updated == 1;
     }
 
     public async ValueTask DeleteAsync(UserId userId, CancellationToken cancellationToken = default)
@@ -130,10 +150,40 @@ public sealed class SqlNativeTotpCredentialRepository : INativeTotpCredentialRep
     /// <summary>The new identity of a stored secret.</summary>
     internal static string NewCredentialId() => Guid.NewGuid().ToString("N");
 
-    internal static Task<int> RemoveCandidatesAsync(AppertureDbContext db, UserId userId, CancellationToken cancellationToken) =>
-        db.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM [UserTotpReplacementCandidates] WHERE [UserId] = {userId.Value};",
+    /// <summary>
+    /// Removes every replacement candidate of the user, in the documented lock order: the user's credential row first
+    /// (<c>UPDLOCK, HOLDLOCK</c>, the lock every staging, verification and switch takes first), then the candidate rows. A deleter
+    /// that took candidate rows first could hold one that a staging in progress needs while waiting for one the staging holds (a
+    /// lock cycle, SQL error 1205). The credential row is taken whether it is pending or enrolled; when the user has none, the
+    /// serializable read locks the key where it would be, which is also what a candidate operation of that user takes first, so the
+    /// order holds and the cleanup still runs. Joins the caller's transaction when there is one (so the locks are held until that
+    /// transaction ends); otherwise both statements run in one transaction of their own.
+    /// </summary>
+    internal static async Task<int> RemoveCandidatesAsync(AppertureDbContext db, UserId userId, CancellationToken cancellationToken)
+    {
+        if (db.Database.CurrentTransaction is not null)
+            return await LockCredentialAndRemoveCandidatesAsync(db, userId.Value, cancellationToken);
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var removed = await LockCredentialAndRemoveCandidatesAsync(db, userId.Value, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return removed;
+        });
+    }
+
+    private static async Task<int> LockCredentialAndRemoveCandidatesAsync(AppertureDbContext db, string user, CancellationToken cancellationToken)
+    {
+        await db.Database
+            .SqlQuery<string>($"SELECT [UserId] AS [Value] FROM [UserTotpCredentials] WITH (UPDLOCK, HOLDLOCK) WHERE [UserId] = {user}")
+            .ToListAsync(cancellationToken);
+        // A seek on the user's rows (FORCESEEK on the unfiltered UserId index): a scan would wait for, and lock, other users' rows.
+        return await db.Database.ExecuteSqlInterpolatedAsync(
+            $"DELETE c FROM [UserTotpReplacementCandidates] AS c WITH (FORCESEEK) WHERE c.[UserId] = {user};",
             cancellationToken);
+    }
 
     private static NativeTotpStoredCredential ToDomain(UserTotpCredentialEntity e) => new(
         new UserId(e.UserId),

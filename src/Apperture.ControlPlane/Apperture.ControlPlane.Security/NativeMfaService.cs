@@ -141,8 +141,11 @@ public sealed class NativeMfaService : INativeMfaService
         if (!Rfc6238Totp.Verify(secret, totpCode, unix, stored.LastUsedStep, out var matchedStep))
             return false;
 
-        await _totp.UpdateLastUsedAsync(userId, matchedStep, _time.GetUtcNow(), cancellationToken);
-        return true;
+        // The code is accepted only if recording its step succeeds. The check above read the credential without a lock, so it is
+        // advice: the write is conditional on that credential still being the one checked (not replaced by a switch or reset since)
+        // and on the step being newer than any step already consumed (by a concurrent sign-in or the switch). When the write
+        // changes nothing, the code proves nothing and the sign-in fails.
+        return await _totp.UpdateLastUsedAsync(userId, stored.CredentialId, matchedStep, _time.GetUtcNow(), cancellationToken);
     }
 
     /// <inheritdoc />

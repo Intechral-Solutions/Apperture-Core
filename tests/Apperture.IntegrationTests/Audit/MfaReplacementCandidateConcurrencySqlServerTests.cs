@@ -12,7 +12,10 @@ namespace Apperture.IntegrationTests.Audit;
 /// Concurrent staging, verification and switching of an authenticator replacement, against real SQL Server on both isolation
 /// modes. Every case parks one operation at a statement while it holds what it has taken, lets another operation try, and shows what
 /// each of them ends with. A "blocked" assertion is only that the second operation had not finished while the first held its lock;
-/// the end state is what is asserted for correctness. Fails, never skips, without SQL Server.
+/// the end state is what is asserted for correctness. These cases run on the production retrying contexts, so a deadlock retried
+/// away would not fail them; the one case that claims "without deadlock" counts the retried deadlock victims and asserts there were
+/// none, and the lock order against every candidate deleter is proved on contexts without retry in
+/// <see cref="MfaReplacementCandidateLockOrderSqlServerTests"/>. Fails, never skips, without SQL Server.
 /// </summary>
 [Collection(SqlServerIntegrationCollection.Name)]
 public sealed class MfaReplacementCandidateConcurrencySqlServerTests : IClassFixture<AuditIsolationCatalogs>, IDisposable
@@ -262,23 +265,30 @@ public sealed class MfaReplacementCandidateConcurrencySqlServerTests : IClassFix
         var world = await WorldAsync(rcsi);
         var (candidate, version) = await world.StageAndVerifyAsync();
         var request = world.Request(candidate.CandidateId, version);
-        // Parked after the candidate was consumed and before the old codes are deleted: the switch holds the candidate row.
+        // Parked after the candidate was consumed and before the old codes are deleted: the switch holds the credential and candidate rows.
         var pause = PauseAt.BeforeStatement("DELETE FROM [UserMfaRecoveryCodes]");
-        var switching = SwitchParkedAsync(world, pause, request);
+        // Both sides retry as production does, and count every deadlock victim they retry: "without deadlock" is asserted, not assumed.
+        var deadlocks = new RoleAuthorityWorld.DeadlockLog();
+        var switching = Task.Run(async () =>
+        {
+            await using var db = world.World.NewDeadlockAwareDb(deadlocks, pause);
+            return await new SqlNativeMfaReplacementCandidateRepository(db).SwitchAsync(request);
+        });
         await ReachedAsync(pause, switching);
 
         IReadOnlyList<string>? regenerated = null;
         var regeneration = Task.Run(async () =>
         {
-            await using var db = world.Scratch.NewDb();
+            await using var db = world.World.NewDeadlockAwareDb(deadlocks);
             regenerated = await world.Mfa(db).RegenerateRecoveryCodesAsync(world.UserId, AuditActor.EmergencyCli);
         });
-        (await StillWaitingAsync(regeneration)).Should().BeTrue("the regeneration removes the candidate first, and the switch holds that row");
+        (await StillWaitingAsync(regeneration)).Should().BeTrue("the regeneration takes the user's credential row before the candidates, and the switch holds it");
         pause.Release();
 
         (await switching.WaitAsync(Patience)).IsApplied.Should().BeTrue();
         await regeneration.WaitAsync(Patience);
 
+        deadlocks.Victims.Should().Be(0, "neither side was chosen as a deadlock victim and retried");
         regenerated.Should().HaveCount(10);
         (await world.ActiveSecretHashAsync()).Should().Be(MfaCandidateWorld.HashOf(candidate.ProtectedSecret), "the switch's secret is the active one");
         (await world.CodeIdsAsync())!.Split(',').Should().NotIntersectWith(request.RecoveryCodes.Select(c => c.Id), "the later regeneration's codes replaced the switch's");

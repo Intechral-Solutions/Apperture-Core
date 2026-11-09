@@ -891,6 +891,9 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.VerifiedUtc).HasColumnType("datetime2");
             // At most one live (staged or verified) candidate per user; superseded and consumed rows are history awaiting the next stage's purge.
             e.HasIndex(x => x.UserId).IsUnique().HasFilter("[Status] < 2").HasDatabaseName("UX_UserTotpReplacementCandidates_Live");
+            // Every candidate of a user, history included: a user-scoped delete or purge seeks here instead of scanning (and locking)
+            // other users' rows. Named, because the filtered index above is on the same column.
+            e.HasIndex(x => x.UserId, "IX_UserTotpReplacementCandidates_UserId");
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 

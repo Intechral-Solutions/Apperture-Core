@@ -14,10 +14,13 @@ namespace Apperture.Persistence.SqlServer.Migrations;
 /// <para><b>What it does.</b> Adds <c>UserTotpCredentials.CredentialId</c> (the identity of the stored secret) and gives every
 /// existing row, pending or enrolled, its own random value; then makes the column required. Adds the table
 /// <c>UserTotpReplacementCandidates</c>, which starts empty, with a filtered unique index that allows one live (staged or
-/// verified) candidate per user.</para>
+/// verified) candidate per user and an unfiltered index on the owner for user-scoped deletes.</para>
 /// <para><b>Data.</b> No secret, recovery code, step or timestamp of an existing credential is changed. A candidate never shares a
 /// row with the active credential.</para>
-/// <para><b>Rollback.</b> <c>Down</c> drops the candidate table and the column. Nothing else refers to either.</para>
+/// <para><b>Rollback.</b> <c>Down</c> drops the candidate table and the column. Nothing else refers to either. The column is required
+/// and deliberately has no default, so rolling back only the program is unsupported: an earlier build's first enrollment fails on the
+/// upgraded schema (SQL error 515). The schema must be downgraded or the pre-upgrade backup restored first (deploy/README.md,
+/// "Authenticator records after upgrading").</para>
 /// </remarks>
 [DbContext(typeof(AppertureDbContext))]
 [Migration(MigrationId)]
@@ -83,6 +86,13 @@ public partial class Iam102b_MfaReplacementCandidates : Migration
             column: "UserId",
             unique: true,
             filter: "[Status] < 2");
+
+        // Every candidate of a user, history included. Without it a user-scoped delete has no usable index (the one above is
+        // filtered) and scans the clustered index, waiting for and locking other users' rows: a cross-user lock cycle with a staging.
+        migrationBuilder.CreateIndex(
+            name: "IX_UserTotpReplacementCandidates_UserId",
+            table: "UserTotpReplacementCandidates",
+            column: "UserId");
     }
 
     /// <inheritdoc />

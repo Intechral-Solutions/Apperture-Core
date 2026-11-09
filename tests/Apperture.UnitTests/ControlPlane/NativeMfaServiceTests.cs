@@ -135,6 +135,60 @@ public sealed class NativeMfaServiceTests
     }
 
     [Fact]
+    public async Task A_sign_in_presents_the_identity_of_the_credential_it_checked_and_the_step_its_code_matched()
+    {
+        var harness = await Harness.EnrolledAsync();
+        var checkedCredential = harness.Totp.Stored!.CredentialId;
+        var unix = harness.Clock.GetUtcNow().ToUnixTimeSeconds();
+
+        (await harness.Mfa.VerifyTotpAsync(harness.UserId, Rfc6238Totp.Compute(harness.PlaintextSecret!, unix))).Should().BeTrue();
+
+        harness.Totp.StepWrites.Should().Equal((checkedCredential, unix / Rfc6238Totp.DefaultPeriodSeconds));
+    }
+
+    [Fact]
+    public async Task A_valid_code_whose_step_write_changes_nothing_does_not_sign_in()
+    {
+        // The code is valid for the credential the service read; the conditional write then changes no row. The code proves nothing.
+        var harness = await Harness.EnrolledAsync();
+        var before = harness.Totp.Stored;
+        harness.Totp.RefuseNextStepWrite = true;
+        var code = Rfc6238Totp.Compute(harness.PlaintextSecret!, harness.Clock.GetUtcNow().ToUnixTimeSeconds());
+
+        (await harness.Mfa.VerifyTotpAsync(harness.UserId, code)).Should().BeFalse();
+
+        harness.Totp.StepWrites.Should().ContainSingle("the service asked for the step to be recorded and was refused");
+        harness.Totp.Stored.Should().Be(before);
+    }
+
+    [Fact]
+    public async Task A_code_of_an_authenticator_replaced_after_it_was_checked_does_not_sign_in_and_records_nothing()
+    {
+        // A switch commits between the service's read and its write: new identity, and the step of the candidate's verification code
+        // (lower than the stale code's step, so only the identity condition can refuse it).
+        var harness = await Harness.EnrolledAsync();
+        var unix = harness.Clock.GetUtcNow().ToUnixTimeSeconds();
+        var switchedStep = unix / Rfc6238Totp.DefaultPeriodSeconds - 1;
+        harness.Totp.BeforeNextStepWrite = () => harness.Totp.Replace(c => c with { CredentialId = "switched", LastUsedStep = switchedStep });
+
+        (await harness.Mfa.VerifyTotpAsync(harness.UserId, Rfc6238Totp.Compute(harness.PlaintextSecret!, unix))).Should().BeFalse();
+
+        harness.Totp.Stored!.LastUsedStep.Should().Be(switchedStep, "a sign-in with the retired secret records nothing on the new one");
+    }
+
+    [Fact]
+    public async Task Of_two_sign_ins_that_checked_the_same_code_only_the_first_to_record_its_step_signs_in()
+    {
+        var harness = await Harness.EnrolledAsync();
+        var unix = harness.Clock.GetUtcNow().ToUnixTimeSeconds();
+        var code = Rfc6238Totp.Compute(harness.PlaintextSecret!, unix);
+        // The other sign-in read the same row, checked the same code and recorded its step first.
+        harness.Totp.BeforeNextStepWrite = () => harness.Totp.Replace(c => c with { LastUsedStep = unix / Rfc6238Totp.DefaultPeriodSeconds });
+
+        (await harness.Mfa.VerifyTotpAsync(harness.UserId, code)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task Recovery_code_succeeds_once_then_fails()
     {
         var harness = await Harness.EnrolledAsync();
@@ -290,10 +344,42 @@ public sealed class NativeMfaServiceTests
             return ValueTask.FromResult(true);
         }
 
-        public ValueTask UpdateLastUsedAsync(UserId userId, long lastUsedStep, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default)
+        /// <summary>Plays a write that changes no row although the code was valid when checked (the store refused it).</summary>
+        public bool RefuseNextStepWrite { get; set; }
+
+        /// <summary>Plays another writer (a switch, a reset and new enrolment, a concurrent sign-in) between the service's check and its step write.</summary>
+        public Action? BeforeNextStepWrite { get; set; }
+
+        /// <summary>The identity and step each step write presented.</summary>
+        public List<(string ExpectedCredentialId, long Step)> StepWrites { get; } = [];
+
+        /// <summary>Replaces the stored credential, as a committed switch or a reset followed by a new enrolment would.</summary>
+        public void Replace(Func<NativeTotpStoredCredential, NativeTotpStoredCredential> change) => _stored = change(_stored!);
+
+        public NativeTotpStoredCredential? Stored => _stored;
+
+        public ValueTask<bool> UpdateLastUsedAsync(UserId userId, string expectedCredentialId, long matchedStep, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default)
         {
-            _stored = _stored! with { LastUsedStep = lastUsedStep, LastVerifiedAtUtc = verifiedAtUtc };
-            return ValueTask.CompletedTask;
+            var interleaved = BeforeNextStepWrite;
+            BeforeNextStepWrite = null;
+            interleaved?.Invoke();
+            StepWrites.Add((expectedCredentialId, matchedStep));
+            if (RefuseNextStepWrite)
+            {
+                RefuseNextStepWrite = false;
+                return ValueTask.FromResult(false);
+            }
+
+            // As the repository: the enrolled credential that was checked, and a step newer than any already consumed.
+            if (_stored is not { IsEnrolled: true } enrolled
+                || enrolled.CredentialId != expectedCredentialId
+                || (enrolled.LastUsedStep is { } last && last >= matchedStep))
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            _stored = enrolled with { LastUsedStep = matchedStep, LastVerifiedAtUtc = verifiedAtUtc };
+            return ValueTask.FromResult(true);
         }
 
         public ValueTask DeleteAsync(UserId userId, CancellationToken cancellationToken = default)

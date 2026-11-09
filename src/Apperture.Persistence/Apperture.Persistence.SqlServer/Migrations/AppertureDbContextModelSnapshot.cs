@@ -3481,6 +3481,8 @@ namespace Apperture.Persistence.SqlServer.Migrations
                         .HasDatabaseName("UX_UserTotpReplacementCandidates_Live")
                         .HasFilter("[Status] < 2");
 
+                    b.HasIndex(new[] { "UserId" }, "IX_UserTotpReplacementCandidates_UserId");
+
                     b.ToTable("UserTotpReplacementCandidates", (string)null);
                 });
 

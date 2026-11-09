@@ -34,7 +34,20 @@ public interface INativeTotpCredentialRepository
         DateTimeOffset enrolledAtUtc,
         CancellationToken cancellationToken = default);
 
-    ValueTask UpdateLastUsedAsync(UserId userId, long lastUsedStep, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Records a sign-in's accepted TOTP step, and is what makes the code single-use: one statement whose condition the database
+    /// evaluates as it writes. The row must belong to <paramref name="userId"/>, be enrolled, still be the credential identified by
+    /// <paramref name="expectedCredentialId"/> (the <see cref="NativeTotpStoredCredential.CredentialId"/> read together with the
+    /// secret the code was checked against), and have no recorded step or one strictly lower than <paramref name="matchedStep"/>.
+    /// True when the step was recorded; false when nothing was changed. On false the caller must reject the sign-in: the secret
+    /// was replaced or reset after the code was checked, or another sign-in already consumed this step or a later one.
+    /// </summary>
+    ValueTask<bool> UpdateLastUsedAsync(
+        UserId userId,
+        string expectedCredentialId,
+        long matchedStep,
+        DateTimeOffset verifiedAtUtc,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Removes the credential. A replacement candidate staged for the user is removed with it: it was staged against a credential that no longer exists.</summary>
     ValueTask DeleteAsync(UserId userId, CancellationToken cancellationToken = default);

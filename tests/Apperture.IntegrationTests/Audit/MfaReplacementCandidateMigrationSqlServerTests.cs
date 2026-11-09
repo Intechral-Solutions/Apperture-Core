@@ -98,6 +98,18 @@ public sealed class MfaReplacementCandidateMigrationSqlServerTests
             """)).Should().ContainSingle().Subject;
         index["is_unique"].Should().Be(true);
         index["filter_definition"].Should().Be("([Status]<(2))");
+
+        // Every candidate of a user is reachable by an unfiltered index on the owner, so a user-scoped delete can seek.
+        var owner = (await scratch.RowsAsync("""
+            SELECT i.is_unique, i.has_filter, c.name AS key_column, COUNT(*) OVER () AS key_columns
+              FROM sys.indexes AS i
+              JOIN sys.index_columns AS ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.is_included_column = 0
+              JOIN sys.columns AS c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+             WHERE i.object_id = OBJECT_ID(N'UserTotpReplacementCandidates') AND i.name = N'IX_UserTotpReplacementCandidates_UserId';
+            """)).Should().ContainSingle().Subject;
+        owner["is_unique"].Should().Be(false);
+        owner["has_filter"].Should().Be(false);
+        owner["key_column"].Should().Be("UserId");
         (await scratch.ScalarAsync<string>("""
             SELECT delete_referential_action_desc FROM sys.foreign_keys
              WHERE parent_object_id = OBJECT_ID(N'UserTotpReplacementCandidates') AND name = N'FK_UserTotpReplacementCandidates_Users_UserId';
@@ -134,5 +146,29 @@ public sealed class MfaReplacementCandidateMigrationSqlServerTests
         (await ColumnExistsAsync(scratch, "UserTotpCredentials", "CredentialId")).Should().BeTrue();
         (await scratch.ScalarAsync<int>("SELECT COUNT(DISTINCT CredentialId) FROM UserTotpCredentials;")).Should().Be(Seeds.Length);
         Iam102b_MfaReplacementCandidates.MigrationId.Should().Be("20261108120000_Iam102b_MfaReplacementCandidates");
+    }
+
+    [Fact]
+    public async Task An_earlier_build_cannot_create_an_authenticator_on_the_upgraded_schema_but_can_after_the_schema_is_downgraded()
+    {
+        // The rollback constraint the deployment guide documents: rolling back only the program is not supported. An earlier build
+        // writes a first enrollment without the identity column; the upgraded schema refuses it (no default, by design), loudly and
+        // without changing anything. After the schema is downgraded (or the pre-upgrade backup restored) the same write succeeds.
+        await using var scratch = await ExistingInstallationAsync();
+        await scratch.MigrateToCurrentAsync();
+        var user = NewUserId();
+        await scratch.AddUserAsync(user, NewUsername("older"));
+        var earlierBuildInsert = $"""
+            INSERT INTO UserTotpCredentials (UserId, ProtectedSecret, ProtectorKeyId, IsEnrolled, LastUsedStep, CreatedAtUtc, EnrolledAtUtc, LastVerifiedAtUtc)
+            VALUES (N'{user}', 0x0102, N'apperture.native-mfa.totp', 0, NULL, SYSDATETIMEOFFSET(), NULL, NULL);
+            """;
+
+        var refused = async () => await scratch.ExecuteAsync(earlierBuildInsert);
+        (await refused.Should().ThrowAsync<SqlException>()).Which.Number.Should().Be(515, "the identity is required and has no default");
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM UserTotpCredentials WHERE UserId = N'{user}';")).Should().Be(0);
+
+        await scratch.MigrateToAsync(PreMigration);
+        await scratch.ExecuteAsync(earlierBuildInsert);
+        (await scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM UserTotpCredentials WHERE UserId = N'{user}';")).Should().Be(1);
     }
 }
