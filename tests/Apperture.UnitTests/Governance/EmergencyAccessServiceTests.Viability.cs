@@ -335,4 +335,59 @@ public sealed partial class EmergencyAccessServiceTests
         harness.Users.AddAttempts.Should().Be(0, "no account is created beside a designation that exists under the gate");
         harness.Recorder.Actions.Should().BeEmpty();
     }
+
+    // ------------------------------------------------------------------------------------------------ preparation
+
+    /// <summary>A coordinator whose build of what the viability reads are made from fails, as a host's build of its options can (R-1).</summary>
+    private sealed class FailingPreparation(IAdministratorViabilityCoordinator inner) : IAdministratorViabilityCoordinator
+    {
+        public int Prepared { get; private set; }
+
+        public ValueTask PrepareAsync(CancellationToken cancellationToken = default)
+        {
+            Prepared++;
+            throw new TimeoutException("The options could not be built.");
+        }
+
+        public ValueTask<AdministratorViabilityScope> EnterAsync(CancellationToken cancellationToken = default) => inner.EnterAsync(cancellationToken);
+
+        public ValueTask<AdministratorGateOnlyScope> EnterGateOnlyAsync(CancellationToken cancellationToken = default) => inner.EnterGateOnlyAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task Each_writer_prepares_the_viability_reads_before_its_unit_and_a_failed_preparation_takes_no_gate_and_changes_nothing()
+    {
+        var harness = Harness.WithAdmin("admin-1");
+        await harness.Emergency.DesignateAsync(new UserId("admin-1"), Cli);
+        harness.Users.Seed(Admin("admin-2", designated: false));
+        var acquired = harness.Gate.Acquired;
+        var attempts = harness.Recorder.Operations.Count;
+        FailingPreparation? failing = null;
+        harness.UseReads(harness.Reads, inner => failing = new FailingPreparation(inner));
+
+        var designate = () => harness.Emergency.DesignateAsync(new UserId("admin-2"), Cli).AsTask();
+        var revoke = () => harness.Emergency.RevokeAsync(confirmFallback: true, Cli).AsTask();
+
+        await designate.Should().ThrowAsync<TimeoutException>();
+        await revoke.Should().ThrowAsync<TimeoutException>();
+        failing!.Prepared.Should().Be(2);
+        harness.Gate.Acquired.Should().Be(acquired, "a writer prepares before its unit, so a failed preparation never takes the gate");
+        harness.Recorder.Operations.Count.Should().Be(attempts, "no unit was opened");
+        harness.Users.Get("admin-1")!.IsBreakGlassEligible.Should().BeTrue("nothing was revoked");
+        harness.Users.Get("admin-2")!.IsBreakGlassEligible.Should().BeFalse("nothing was designated");
+
+        // Provisioning prepares before its unit too (it needs an installation with no designated account).
+        var empty = Harness.Empty();
+        empty.Roles.RoleExists = true;
+        FailingPreparation? failingProvision = null;
+        empty.UseReads(empty.Reads, inner => failingProvision = new FailingPreparation(inner));
+
+        var provision = () => empty.Emergency.ProvisionAsync("quiet-maple-lantern-harbor", Cli).AsTask();
+
+        await provision.Should().ThrowAsync<TimeoutException>();
+        failingProvision!.Prepared.Should().Be(1);
+        empty.Gate.Acquired.Should().Be(0);
+        empty.Users.AddAttempts.Should().Be(0);
+        empty.Recorder.Operations.Should().BeEmpty();
+    }
 }

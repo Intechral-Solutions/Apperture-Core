@@ -293,6 +293,20 @@ public sealed partial class NativeMfaServiceTests
         public Harness UseViability(params AdministratorViabilityState[] states)
         {
             Reads = new ScriptedViabilityReads(states);
+            return Rebuild();
+        }
+
+        /// <summary>Rebuilds the service over a coordinator that builds <paramref name="deployment"/> when an operation prepares (R-1).</summary>
+        public Harness UseDeployment(IDeploymentAuthenticationConfiguration deployment)
+        {
+            Deployment = deployment;
+            return Rebuild();
+        }
+
+        private IDeploymentAuthenticationConfiguration? Deployment { get; set; }
+
+        private Harness Rebuild()
+        {
             Mfa = new NativeMfaService(
                 Totp,
                 Recovery,
@@ -301,7 +315,7 @@ public sealed partial class NativeMfaServiceTests
                 Clock,
                 NullLogger<NativeMfaService>.Instance,
                 new ForwardingUnit(this),
-                new AdministratorViabilityCoordinator(Gate, Reads),
+                new AdministratorViabilityCoordinator(Gate, Reads, Deployment),
                 Events,
                 Accounts(),
                 Candidates);

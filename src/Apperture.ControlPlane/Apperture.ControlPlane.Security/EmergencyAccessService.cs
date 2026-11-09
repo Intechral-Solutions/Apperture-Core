@@ -119,6 +119,9 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
     /// <inheritdoc />
     public async ValueTask DesignateAsync(UserId userId, ActorId? actorId, CancellationToken cancellationToken = default)
     {
+        // What the viability reads are made from, built outside any transaction (R-1). The command line's attested reading builds nothing.
+        await Viability.PrepareAsync(cancellationToken);
+
         // The demotion of the previous account, the designation, the canonical identity and their rows commit together, and only when
         // the designation leaves administrator viability intact: the account designated stops counting as an ordinary administrator.
         await Unit.ExecuteRefusableAsync(
@@ -206,6 +209,9 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
         var normalizedUsername = EmergencyAccessIdentity.NormalizedLocalUsername;
         var userId = new UserId(Guid.NewGuid().ToString("N")[..24]);
         var (hash, salt) = _hasher.HashPassword(password);
+
+        // What the viability reads are made from, built outside any transaction (R-1). The command line's attested reading builds nothing.
+        await Viability.PrepareAsync(cancellationToken);
 
         // The account, its credential and the row commit together: no Recovery Access account without its password.
         return await Unit.ExecuteAsync(
@@ -337,6 +343,9 @@ public sealed class EmergencyAccessService : IEmergencyAccessService
                 EmergencyAccessErrorCodes.ConfirmFallbackRequired,
                 "Revoking emergency access returns the installation to last-administrator fallback protection. Pass --confirm-fallback to continue.");
         }
+
+        // What the viability reads are made from, built outside any transaction (R-1). The command line's attested reading builds nothing.
+        await Viability.PrepareAsync(cancellationToken);
 
         // Strict revocation: whatever the state before, it stands only when another ordinary administrator who can sign in without
         // Microsoft remains in each view, and the confirmation above does not replace that.

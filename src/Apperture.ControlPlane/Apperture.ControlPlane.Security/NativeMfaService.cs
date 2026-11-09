@@ -141,6 +141,9 @@ public sealed class NativeMfaService : INativeMfaService
     {
         var codes = NewRecoveryCodes();
 
+        // What the viability reads are made from, built outside any transaction (R-1). The command line's attested reading builds nothing.
+        await Viability.PrepareAsync(cancellationToken);
+
         // The enrollment, its recovery codes and both rows commit together.
         return await TranslatingConcurrencyAsync(() => Unit.ExecuteAsync(
             new AuditedOperation(AuditActionNames.MfaEnrolled, actor),
@@ -251,6 +254,10 @@ public sealed class NativeMfaService : INativeMfaService
         CancellationToken cancellationToken = default)
     {
         var codes = NewRecoveryCodes();
+
+        // What the viability reads are made from, built outside any transaction (R-1). The command line's attested reading builds nothing.
+        await Viability.PrepareAsync(cancellationToken);
+
         return await TranslatingConcurrencyAsync(() => Unit.ExecuteAsync(
             new AuditedOperation(AuditActionNames.RecoveryCodesGenerated, actor),
             async (transaction, ct) =>
@@ -274,6 +281,9 @@ public sealed class NativeMfaService : INativeMfaService
     /// <inheritdoc />
     public async ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default)
     {
+        // What the viability reads are made from, built outside any transaction (R-1). The command line's attested reading builds nothing.
+        await Viability.PrepareAsync(cancellationToken);
+
         await TranslatingConcurrencyAsync(() => Unit.ExecuteRefusableAsync(
             Events,
             new AuditedOperation(AuditActionNames.MfaReset, actor),
@@ -415,6 +425,10 @@ public sealed class NativeMfaService : INativeMfaService
         // the codes returned are the codes stored. No operator input happens from here on.
         var codes = NewRecoveryCodes();
         var switchedAt = _time.GetUtcNow();
+
+        // What the viability reads are made from, built outside any transaction (R-1, U1). The command line's attested reading builds nothing.
+        await Viability.PrepareAsync(cancellationToken);
+
         try
         {
             return await Unit.ExecuteRefusableAsync(

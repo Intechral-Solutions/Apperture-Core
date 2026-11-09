@@ -542,16 +542,17 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Security + "RealBootstrapRecoveryService.cs", "ExecuteRecoveryAsync", Writes.RoleAssign,
             ["ExecuteAsync<UserId?>(", TakeGateOnly, "ResolveTargetUserAsync(", "DeclareNoOp()", ".AssignToUserAsync(", "StageAsync("]),
 
-        // WP4B-C, Recovery Access. A designation: the gate first; the account loaded (its id is used from then on); the no-op before
-        // the invariants; the state before; the demotion and the designation through the one setter; the rename; the transition read
-        // back; the decision last, after every write; a refusal through the one mapping; only then the rows.
+        // WP4B-C, Recovery Access. Every writer of this package that reads viability builds what the reads are made from before its
+        // unit (R-1, U1). A designation: the gate first; the account loaded (its id is used from then on); the no-op before the
+        // invariants; the state before; the demotion and the designation through the one setter; the rename; the transition read back;
+        // the decision last, after every write; a refusal through the one mapping; only then the rows.
         new(Security + "EmergencyAccessService.cs", "DesignateAsync", Writes.DesignationFlagUpdate,
-            ["Unit.ExecuteRefusableAsync(", TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "SetDesignationAsync(", "RenameToCanonicalAsync(", "RequireDesignationTransitionAsync(", "VerifyDesignationAsync(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
+            [PrepareOptions, "Unit.ExecuteRefusableAsync(", TakeGate, "GetByIdAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "SetDesignationAsync(", "RenameToCanonicalAsync(", "RequireDesignationTransitionAsync(", "VerifyDesignationAsync(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
 
         // A strict revocation: the gate first; the designated account loaded; the state before; the one write; the transition read back;
         // the decision last; the decision checked to be about this revocation; a refusal through the one mapping; only then the row.
         new(Security + "EmergencyAccessService.cs", "RevokeAsync", Writes.DesignationFlagUpdate,
-            ["Unit.ExecuteRefusableAsync(", TakeGate, "FindDesignatedEmergencyUserAsync(", "CaptureBeforeAsync(", "SetDesignationAsync(", "RequireRevocationTransitionAsync(", "VerifyRevocationAsync(", "RequireDecidedOnTheRevocation(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
+            [PrepareOptions, "Unit.ExecuteRefusableAsync(", TakeGate, "FindDesignatedEmergencyUserAsync(", "CaptureBeforeAsync(", "SetDesignationAsync(", "RequireRevocationTransitionAsync(", "VerifyRevocationAsync(", "RequireDecidedOnTheRevocation(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
 
         // The one conditional setter both reducers write through: a stored value it did not expect is an invariant failure.
         new(Security + "EmergencyAccessService.cs", "SetDesignationAsync", Writes.DesignationFlagUpdate,
@@ -560,26 +561,26 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         // Provisioning, a gated raiser: the gate first; the designation decided again under it; the new account; the state before; the
         // account and its credential; the assertion that nothing was reduced; the row.
         new(Security + "EmergencyAccessService.cs", "ProvisionAsync", Writes.UserCreatedWithRoleIds,
-            ["Unit.ExecuteAsync(", TakeGate, "FindDesignatedEmergencyUserAsync(", "new User(", "CaptureBeforeForRaiseAsync(", "AddAsync(", ".SetPasswordAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+            [PrepareOptions, "Unit.ExecuteAsync(", TakeGate, "FindDesignatedEmergencyUserAsync(", "new User(", "CaptureBeforeForRaiseAsync(", "AddAsync(", ".SetPasswordAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
 
         // WP4B-C, native MFA. The bare reset, a reducer: the gate first; the account loaded; the no-op before the invariants; the state
         // before; the removal of the authenticator and its codes; the decision last; a refusal through the one mapping; the row.
         new(Security + "NativeMfaService.cs", "ResetAsync", Writes.MfaReset,
-            ["Unit.ExecuteRefusableAsync(", TakeGate, "AccountOfAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "_totp.DeleteAsync(", "_recoveryCodes.DeleteAllAsync(", "VerifyBareResetAsync(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
+            [PrepareOptions, "Unit.ExecuteRefusableAsync(", TakeGate, "AccountOfAsync(", "DeclareNoOp()", "CaptureBeforeAsync(", "_totp.DeleteAsync(", "_recoveryCodes.DeleteAllAsync(", "VerifyBareResetAsync(", "ViabilityRefusalAudit.Blocked(", "StageAsync("]),
 
         // The first enrolment's completion, a gated raiser: the gate first; the account loaded; the code checked; the state before; the
         // conditional enrolment and the codes; the assertion; the rows.
         new(Security + "NativeMfaService.cs", "CompleteEnrollmentAsync", Writes.MfaEnrol,
-            ["Unit.ExecuteAsync(", TakeGate, "AccountOfAsync(", "Rfc6238Totp.Verify(", "CaptureBeforeForRaiseAsync(", "_totp.MarkEnrolledAsync(", "_recoveryCodes.ReplaceAllAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+            [PrepareOptions, "Unit.ExecuteAsync(", TakeGate, "AccountOfAsync(", "Rfc6238Totp.Verify(", "CaptureBeforeForRaiseAsync(", "_totp.MarkEnrolledAsync(", "_recoveryCodes.ReplaceAllAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
 
         // The regeneration of the codes, a gated raiser.
         new(Security + "NativeMfaService.cs", "RegenerateRecoveryCodesAsync", Writes.MfaEnrol,
-            ["Unit.ExecuteAsync(", TakeGate, "AccountOfAsync(", "CaptureBeforeForRaiseAsync(", "_recoveryCodes.ReplaceAllAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
+            [PrepareOptions, "Unit.ExecuteAsync(", TakeGate, "AccountOfAsync(", "CaptureBeforeForRaiseAsync(", "_recoveryCodes.ReplaceAllAsync(", "AssertRaiseOnlyAsync(", "StageAsync("]),
 
         // The switch, gated and net-judged: the gate first; the account loaded; the state before; the switch (inside the unit, never
         // standalone); the decision last; a decision not made on the posture alone refused (I-R3-1); a posture refusal; only then the rows.
         new(Security + "NativeMfaService.cs", "CompleteReplacementAsync", Writes.MfaCandidateSwitch,
-            ["Unit.ExecuteRefusableAsync(", TakeGate, "AccountOfAsync(", "CaptureBeforeAsync(", "Candidates.SwitchAsync(", "VerifyReplacementAsync(", "ViabilityDecisionBasis.PostureOnly", "ViabilityRefusalAudit.Blocked(", "decision.Refusal()", "StageAsync("]),
+            [PrepareOptions, "Unit.ExecuteRefusableAsync(", TakeGate, "AccountOfAsync(", "CaptureBeforeAsync(", "Candidates.SwitchAsync(", "VerifyReplacementAsync(", "ViabilityDecisionBasis.PostureOnly", "ViabilityRefusalAudit.Blocked(", "decision.Refusal()", "StageAsync("]),
     ];
 
     private const string TakeGateOnly = ".EnterGateOnlyAsync(";

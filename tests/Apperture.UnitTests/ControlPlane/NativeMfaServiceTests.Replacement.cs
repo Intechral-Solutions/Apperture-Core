@@ -428,6 +428,62 @@ public sealed partial class NativeMfaServiceTests
         harness.Gate.Acquired.Should().Be(1, "consumption takes no gate (only the enrolment did)");
     }
 
+    // ------------------------------------------------------------------------------------------------ preparation
+
+    /// <summary>A deployment whose build fails, as a host's build of its running options can (R-1). Preparing never reads it.</summary>
+    private sealed class FailingDeployment : IDeploymentAuthenticationConfiguration
+    {
+        public int Builds { get; private set; }
+
+        public DeploymentAuthenticationReading Read() => throw new InvalidOperationException("Preparing builds; it never reads.");
+
+        public void EnsureInitialized()
+        {
+            Builds++;
+            throw new TimeoutException("The options could not be built.");
+        }
+    }
+
+    [Fact]
+    public async Task Every_gated_operation_prepares_the_viability_reads_before_its_unit_and_a_failed_preparation_changes_nothing()
+    {
+        var (harness, challenge, version) = await VerifiedReplacementAsync();
+        var deployment = new FailingDeployment();
+        harness.UseDeployment(deployment);
+        var acquired = harness.Gate.Acquired;
+        var active = harness.Totp.Stored;
+        var codes = harness.Recovery.Codes.ToList();
+
+        var complete = () => harness.Mfa.CompleteReplacementAsync(harness.UserId, challenge.CandidateId, version, AuditActor.EmergencyCli).AsTask();
+        var reset = () => harness.Mfa.ResetAsync(harness.UserId, AuditActor.EmergencyCli).AsTask();
+        var regenerate = () => harness.Mfa.RegenerateRecoveryCodesAsync(harness.UserId, AuditActor.EmergencyCli).AsTask();
+
+        await complete.Should().ThrowAsync<TimeoutException>();
+        await reset.Should().ThrowAsync<TimeoutException>();
+        await regenerate.Should().ThrowAsync<TimeoutException>();
+        deployment.Builds.Should().Be(3);
+        harness.Gate.Acquired.Should().Be(acquired, "each operation prepares before its unit, so a failed preparation never takes the gate");
+        harness.Recorder.Operations.Should().BeEmpty("no unit was opened");
+        harness.Totp.Stored.Should().Be(active);
+        harness.Recovery.Codes.Should().Equal(codes);
+        harness.Candidates.Candidate!.Status.Should().Be(NativeMfaCandidateStatus.Verified, "the verified candidate can still be switched once preparing succeeds");
+
+        // The completion of a first enrolment prepares before its unit too.
+        var fresh = Harness.Create();
+        var enrolment = await fresh.Mfa.BeginEnrollmentAsync(fresh.UserId, "emergency");
+        var freshDeployment = new FailingDeployment();
+        fresh.UseDeployment(freshDeployment);
+        var code = Rfc6238Totp.Compute(Base32.Decode(enrolment.ManualEntryKey), fresh.Clock.GetUtcNow().ToUnixTimeSeconds());
+
+        var completeEnrolment = () => fresh.Mfa.CompleteEnrollmentAsync(fresh.UserId, code, AuditActor.EmergencyCli).AsTask();
+
+        await completeEnrolment.Should().ThrowAsync<TimeoutException>();
+        freshDeployment.Builds.Should().Be(1);
+        fresh.Gate.Acquired.Should().Be(0);
+        fresh.Recorder.Operations.Should().BeEmpty();
+        (await fresh.Mfa.IsEnrolledAsync(fresh.UserId)).Should().BeFalse();
+    }
+
     // ------------------------------------------------------------------------------------------------ the candidate store
 
     /// <summary>One user's candidate over the harness's authenticator and codes, with the store's conditions; a case can script a switch.</summary>
