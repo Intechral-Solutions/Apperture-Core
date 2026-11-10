@@ -462,6 +462,47 @@ public sealed class EmergencyCommandRunnerTests
         console.AllOutput.Should().NotContain("will not be shown again");
     }
 
+    [Theory]
+    [InlineData("  ")]
+    [InlineData("")]
+    [InlineData("\t")]
+    public async Task A_returned_code_set_with_a_blank_entry_is_not_shown_as_a_usable_set(string blank)
+    {
+        // A set with an unusable entry cannot be trusted to be the committed set: it is reported as not fully confirmed (status 5),
+        // and neither the usable-looking entry nor the "store these" instruction is shown.
+        var w = new CliWorld();
+        w.Enrolled(true);
+        w.Mfa.Setup(m => m.RegenerateRecoveryCodesAsync(CliWorld.Id, AuditActor.EmergencyCli, It.IsAny<CancellationToken>()))
+            .Returns(() => ValueTask.FromResult<IReadOnlyList<string>>(["AAAA-1111", blank]));
+        var console = w.Console(false);
+
+        var exit = await w.RunAsync(console, CliWorld.OnAccount("regenerate-codes"));
+
+        exit.Should().Be(EmergencyExitCodes.OutcomeUnknown);
+        console.AllOutput.Should().NotContain("AAAA-1111").And.NotContain("will not be shown again").And.NotContain("Store these recovery codes");
+        console.ErrorText.ToString().Should().Contain("regenerate-codes", "the operator is told how to obtain a usable set");
+        console.Events.Should().NotContain(e => e.StartsWith("out:AAAA"), "nothing from the set reached the output");
+    }
+
+    [Fact]
+    public async Task Cancelling_at_the_enrolment_code_prompt_exits_refused_with_a_cancellation_line_and_completes_nothing()
+    {
+        // A cancelled command is documented as status 1 (nothing was changed); it is never a success and never prints a success line.
+        var w = new CliWorld();
+        w.Enrolled(false);
+        w.Mfa.Setup(m => m.BeginEnrollmentAsync(CliWorld.Id, "breakglass", It.IsAny<CancellationToken>()))
+            .Returns(() => ValueTask.FromResult(new NativeMfaEnrollmentChallenge(CliWorld.Id, "otpauth://x", "KEY", [])));
+        var console = w.Console(redirected: false, new OperationCanceledException());
+
+        var exit = await w.RunAsync(console, CliWorld.OnAccount("enroll-mfa"));
+
+        exit.Should().Be(EmergencyExitCodes.Refused);
+        exit.Should().NotBe(EmergencyExitCodes.Success);
+        console.ErrorText.ToString().Should().Contain("Cancelled").And.Contain("Nothing was changed");
+        console.AllOutput.Should().NotContain("is enrolled").And.NotContain("will not be shown again");
+        w.Mfa.Verify(m => m.CompleteEnrollmentAsync(It.IsAny<Apperture.Core.Domain.Identity.UserId>(), It.IsAny<string>(), It.IsAny<AuditActor>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     // ------------------------------------------------------------------------------------------------ the rest
 
     [Fact]
