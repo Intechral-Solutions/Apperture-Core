@@ -77,7 +77,8 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
             ValueTask.FromResult(new AccountSecurityMailResult(true, null));
     }
 
-    private static UserProvisioningService Provisioning(RoleAuthorityWorld world, AppertureDbContext db, string actor, IAdministratorViabilityCoordinator coordinator)
+    private static UserProvisioningService Provisioning(
+        RoleAuthorityWorld world, AppertureDbContext db, string actor, IAdministratorViabilityCoordinator coordinator, IAuditedUnitOfWork? unit = null)
     {
         var principal = new Principal(actor);
         return new UserProvisioningService(
@@ -92,7 +93,7 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
             TimeProvider.System,
             new NoMail(),
             new AccountSecurityLinkBuilder(new ConfigurationBuilder().Build()),
-            NewUnit(db, principal),
+            unit ?? NewUnit(db, principal),
             world.NewWriter(principal),
             descriptorRegistry: RoleAuthorityWorld.CatalogRegistry,
             viability: coordinator);

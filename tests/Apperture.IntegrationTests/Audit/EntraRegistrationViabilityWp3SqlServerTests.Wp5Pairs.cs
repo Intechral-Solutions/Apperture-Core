@@ -197,6 +197,11 @@ public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
         secondOutcome.Should().Be(expected, "the second change is decided on what the first committed");
         if (refusalTarget is not null)
             (await RefusalDetailsAsync(scratch, refusalTarget)).Should().Equal(refusalDetail);
+        if ((first, second) == (DirectoryOp.Switch, DirectoryOp.DisableSecond) && concurrently)
+        {
+            // The stale edit was refused before anything was decided (pre-hand-over review I2): no refusal row, and R2 is unchanged.
+            (await RefusalDetailsAsync(scratch, d.S.R2!)).Should().BeEmpty("a stale row version is not a viability refusal and records none");
+        }
         if (second == DirectoryOp.RemoveEntraLinkOfB)
         {
             (await d.S.World.LinkCountAsync(d.B, 0)).Should().Be(1, "the refused removal was rolled back");

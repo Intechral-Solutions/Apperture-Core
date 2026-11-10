@@ -500,4 +500,54 @@ public sealed class EffectiveSignInConfigurationProviderTests
         accepted.Should().Be("common");
         EntraTokenClaims.TenantMatches(Tenant, accepted).Should().BeFalse("a token carries a directory id, never 'common'");
     }
+
+    // IAM-10.2b WP5, A10.2b.16: the merged sign-in snapshot and EntraConfigurationState.IsUsable over a generated corpus of running
+    // options, not only the one case above. They differ in exactly one way, the difference WP0 recorded (F-2): an authentication context
+    // id that is set but not a valid one, which the snapshot rejects and IsUsable ignores. Wherever they differ, the provider reports it
+    // and counts Entra as not usable: the stricter, the snapshot, is used.
+    [Fact]
+    public async Task Over_a_generated_corpus_the_snapshot_and_is_usable_differ_only_on_an_invalid_authentication_context_and_the_stricter_is_used()
+    {
+        string?[] authorities = [Authority(Tenant), "https://login.microsoftonline.com/contoso.onmicrosoft.com", "not a url", "", "   ", null];
+        string?[] clientIds = ["client", "", " ", null];
+        string?[] secrets = ["secret", "", " ", null];
+        string?[] contexts = [null, "", " ", "c1", "C25", " c3 ", "c26", "c0", "not-a-context"];
+        var compared = 0;
+        var differing = 0;
+
+        foreach (var enabled in new[] { true, false })
+        foreach (var authority in authorities)
+        foreach (var clientId in clientIds)
+        foreach (var secret in secrets)
+        foreach (var context in contexts)
+        foreach (var local in new[] { true, false })
+        {
+            var options = new EntraAuthOptions
+            {
+                Enabled = enabled,
+                Authority = authority!,
+                ClientId = clientId!,
+                ClientSecret = secret!,
+                AzureTenantId = Tenant,
+                AuthenticationContextId = context,
+            };
+            var snapshot = AuthSignInOptionsMerger.Merge(new LocalAuthOptions { Enabled = local }, options, new InstanceAuthUiPolicy()).EntraSignInEnabled;
+            var isUsable = EntraConfigurationState.IsUsable(options);
+            compared++;
+            if (snapshot == isUsable)
+                continue;
+
+            differing++;
+            var invalidContext = !string.IsNullOrWhiteSpace(context) && EntraAuthenticationContextId.TryNormalize(context) is null;
+            (isUsable && !snapshot && invalidContext).Should().BeTrue(
+                $"the only recorded difference is an invalid authentication context, with the snapshot the stricter (enabled={enabled}, authority='{authority}', client='{clientId}', secret set={!string.IsNullOrWhiteSpace(secret)}, context='{context}')");
+
+            var configuration = await Provider(Host(running: Running(options, local: local)), Registration()).ReadAsync();
+            configuration.Now.EntraSignInUsable.Should().BeFalse("the stricter answer is the one used");
+            configuration.Now.Notes.Should().Contain(n => n.Contains("IsUsable disagree", StringComparison.Ordinal), "the difference is reported, not hidden");
+        }
+
+        compared.Should().Be(2 * 6 * 4 * 4 * 9 * 2);
+        differing.Should().BeGreaterThan(0, "the corpus contains the recorded difference, so the comparison is not vacuous");
+    }
 }

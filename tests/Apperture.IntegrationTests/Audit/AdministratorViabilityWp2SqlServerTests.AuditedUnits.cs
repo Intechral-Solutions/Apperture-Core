@@ -1,6 +1,8 @@
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Application.Audit;
+using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Identity;
 using Apperture.Persistence.SqlServer;
 using FluentAssertions;
@@ -23,6 +25,9 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
         RemoveLocalLink,
         AssignRole,
         AddLocalLink,
+
+        /// <summary>IAM-10.2b WP5: provisioning a person from the Entra directory with the administrator role (a gated raiser).</summary>
+        ProvisionAdministrator,
     }
 
     public static IEnumerable<object[]> EveryM6UnitOnBothModes() =>
@@ -87,6 +92,33 @@ public sealed partial class AdministratorViabilityWp2SqlServerTests
                     Run = (db, u, gate) => Service(world, db, actor, EntraReading, gate, u).RemoveIdentityLinkAsync(new UserId(target), IdentitySource.Local, username).AsTask(),
                     ChangeLanded = async () => await world.LinkCountAsync(target, 1) == 0,
                     RecordedRows = () => world.AuditRowsAsync(AuditActionNames.IdentityLinkRemoved, "L" + target),
+                };
+            }
+
+            case M6Unit.ProvisionAdministrator:
+            {
+                // IAM-10.2b WP5: the initial role of a provisioned person, through the Management Host's provisioning service and coordinator.
+                var objectId = Guid.NewGuid().ToString();
+                return new M6Case
+                {
+                    Actor = actor,
+                    World = world,
+                    Run = async (db, u, gate) => await Provisioning(
+                            world,
+                            db,
+                            actor,
+                            new AdministratorViabilityCoordinator(gate ?? new SqlPlatformAdministratorSetGate(db), AdministratorViabilitySqlServerTests.Service(db, EntraReading)),
+                            u)
+                        .ProvisionFromEntraDirectoryAsync(new EntraDirectoryProvisioningRequest(RegistrationId, objectId, Admin)),
+                    ChangeLanded = async () => await world.Scratch.ScalarAsync<int>($"""
+                        SELECT COUNT(*) FROM UserRoles r JOIN IdentityLinks l ON l.UserId = r.UserId
+                         WHERE l.ExternalId = N'{objectId.ToLowerInvariant()}' AND r.RoleId = N'{Admin}';
+                        """) == 1,
+                    RecordedRows = () => world.Scratch.ScalarAsync<int>($"""
+                        SELECT COUNT(*) FROM AuditLogs
+                         WHERE Action = N'{AuditActionNames.ProvisionedFromDirectory}'
+                           AND TargetId IN (SELECT UserId FROM IdentityLinks WHERE ExternalId = N'{objectId.ToLowerInvariant()}');
+                        """),
                 };
             }
 

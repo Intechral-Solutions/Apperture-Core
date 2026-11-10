@@ -23,6 +23,9 @@ public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
         Edit,
         Delete,
         Activate,
+
+        /// <summary>IAM-10.2b WP5: the sign-in policy's unit (gated; a chooser flag cannot reduce either set, so the change is allowed).</summary>
+        SignInPolicy,
     }
 
     public static IEnumerable<object[]> EveryM6UnitOnBothModes() =>
@@ -90,6 +93,23 @@ public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
                     ChangeLanded = async () => await s.Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM EntraInstanceRegistrations WHERE Id = N'{s.R2}';") == 0,
                     RecordedRows = () => RowsAsync(s.Scratch, AuditActionNames.TenantRegistrationDeleted, s.R2!),
                 };
+
+            case M6Unit.SignInPolicy:
+            {
+                var current = await CurrentPolicyAsync(s);
+                var body = PolicyBody(current, preferEntra: !current.PreferEntraInChooser);
+                // The policy is one row and the audit table is shared by the cases of the class: count the rows written since this point.
+                var rowsBefore = await s.Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM AuditLogs WHERE Action = N'{AuditActionNames.SignInPolicyUpdated}';");
+                return new M6Case
+                {
+                    S = s,
+                    Run = async (db, u, gate) => (await Policy(s, db, gate, unit: u).Patch(body, CancellationToken.None)).Result!,
+                    ChangeLanded = async () =>
+                        await s.Scratch.ScalarAsync<bool>("SELECT PreferEntraInChooser FROM InstanceAuthUiPolicies;") != current.PreferEntraInChooser,
+                    RecordedRows = async () =>
+                        await s.Scratch.ScalarAsync<int>($"SELECT COUNT(*) FROM AuditLogs WHERE Action = N'{AuditActionNames.SignInPolicyUpdated}';") - rowsBefore,
+                };
+            }
 
             default:
                 return new M6Case

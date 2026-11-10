@@ -155,7 +155,7 @@ public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
     };
 
     private static ConfigAuthUiPolicyController Policy(Scenario s, AppertureDbContext db, IPlatformAdministratorSetGate? gate = null, EntraAuthOptions? entra = null,
-        IAuthorizationEvaluationService? authorization = null)
+        IAuthorizationEvaluationService? authorization = null, Apperture.Core.Application.Audit.IAuditedUnitOfWork? unit = null)
     {
         var controller = new ConfigAuthUiPolicyController(
             new SqlInstanceAuthUiPolicyRepository(db),
@@ -163,7 +163,7 @@ public sealed partial class EntraRegistrationViabilityWp3SqlServerTests
             authorization ?? new EntraRegistrationSqlHarness.AllowAll(),
             Microsoft.Extensions.Options.Options.Create(new LocalAuthOptions { Enabled = true }),
             Microsoft.Extensions.Options.Options.Create(entra ?? UsableEntra()),
-            AuditRecorderTestSupport.NewUnit(db, s.Principal),
+            unit ?? AuditRecorderTestSupport.NewUnit(db, s.Principal),
             EntraRegistrationSqlHarness.Viability(db, reading: s.Reading, resolver: EntraRegistrationSqlHarness.SecretResolver(db), gate: gate));
         controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
         return controller;
