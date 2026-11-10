@@ -370,4 +370,46 @@ public sealed class AdministratorViabilityHostHttpTests : IClassFixture<Administ
         var retry = await client.DeleteAsync($"api/users/{target.Id}/roles/{Admin}");
         retry.StatusCode.Should().Be(HttpStatusCode.NoContent, "the same request succeeds once the gate is free");
     }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task A_busy_gate_on_setting_a_local_password_is_409_governance_operation_busy_with_retry_and_changes_nothing(bool rcsi)
+    {
+        // WP5, SI-1 (A10.2b.15): setting a password takes the administrator-set gate, because it is serialized with a Recovery Access
+        // designation (L-P3). A gate held past its bound is the same transient 409 with retry as on the other administrator writers, never
+        // an unhandled 500, and nothing is changed or recorded; the same request succeeds once the gate is free.
+        const string password = "quiet-maple-lantern-harbor";
+        var (world, host) = For(rcsi);
+        await ClearAdministratorsAsync(world);
+        var actor = await StrandedActorAsync(world);
+        var target = await world.NewPersonAsync("target");
+        await world.AddCredentialAsync(target.Id);
+        Task<string> HashAsync() => world.Scratch.ScalarAsync<string>($"SELECT PasswordHash FROM LocalCredentials WHERE UserId = N'{target.Id}';");
+        var before = await HashAsync();
+        using var client = _hosts.ImpatientClient(host, actor.Username);
+
+        await using (var holder = await RawSession.BeginAsync(world.Scratch.ConnectionString))
+        {
+            await holder.ExecuteAsync(
+                "DECLARE @r int; EXEC @r = sp_getapplock @Resource = N'" + PlatformAdministratorSetLock.ResourceName
+                + "', @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = 0; IF @r < 0 THROW 50000, 'gate not taken', 1;");
+
+            var busy = await client.PostAsJsonAsync($"api/users/{target.Id}/local-credential/password", new { newPassword = password });
+
+            busy.StatusCode.Should().Be(HttpStatusCode.Conflict, "a gate held past its bound is a transient conflict, not an unhandled error");
+            var body = await BodyAsync(busy);
+            body.GetProperty("code").GetString().Should().Be("governance_operation_busy");
+            body.GetProperty("retry").GetBoolean().Should().BeTrue("contention is transient and safe to retry");
+            body.GetProperty("message").GetString().Should().NotBeNullOrWhiteSpace();
+            await holder.RollbackAsync();
+        }
+
+        (await HashAsync()).Should().Be(before, "nothing was changed");
+        (await world.AuditRowsAsync("credential.password_set", target.Id)).Should().Be(0, "a busy gate writes no row");
+
+        var retry = await client.PostAsJsonAsync($"api/users/{target.Id}/local-credential/password", new { newPassword = password });
+        retry.StatusCode.Should().Be(HttpStatusCode.NoContent, "the same request succeeds once the gate is free");
+        (await HashAsync()).Should().NotBe(before);
+        (await world.AuditRowsAsync("credential.password_set", target.Id)).Should().Be(1);
+    }
 }

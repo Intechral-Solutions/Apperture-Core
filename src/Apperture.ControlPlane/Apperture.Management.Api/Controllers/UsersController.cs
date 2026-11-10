@@ -535,6 +535,12 @@ public sealed class UsersController : ControllerBase
         {
             return Conflict(new { message = ex.Message, code = ex.Code });
         }
+        catch (Exception ex) when (GovernanceFailureResults.IsGovernanceOutcome(ex))
+        {
+            // Setting a password takes the administrator-set lock (it is serialized with a Recovery Access designation), so a lock held past
+            // its bound is the same transient 409 with retry as on the other administrator writers; nothing was changed.
+            return GovernanceFailureResults.Map(ex);
+        }
         catch (InvalidOperationException ex)
         {
             if (ex.Message.Contains("not found") || ex.Message.Contains("no Local identity"))
