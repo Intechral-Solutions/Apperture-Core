@@ -514,6 +514,7 @@ public sealed class UsersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SetLocalPassword(
         string id,
         [FromBody] SetPasswordRequest request,
@@ -541,8 +542,9 @@ public sealed class UsersController : ControllerBase
             // its bound is the same transient 409 with retry as on the other administrator writers; nothing was changed.
             return GovernanceFailureResults.Map(ex);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException ex) when (ex is not AuditInvariantException)
         {
+            // An audit invariant failure is an internal error and reaches the host's handler as one, as on the credential endpoint below.
             if (ex.Message.Contains("not found") || ex.Message.Contains("no Local identity"))
                 return NotFound(new { message = ex.Message });
             return BadRequest(new { message = ex.Message });

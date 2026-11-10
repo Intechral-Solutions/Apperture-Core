@@ -296,6 +296,25 @@ public sealed class UsersControllerIdentityLinkTests
         await disableCredential.Should().ThrowAsync<Apperture.Core.Application.Audit.AuditInvariantException>();
     }
 
+    // IAM-10.2b WP5 (pre-hand-over review C4): setting a password became a governance endpoint with SI-1, and its catch of
+    // InvalidOperationException mapped an audit invariant failure to 400, or to 404 by message. It now lets it through as the credential
+    // endpoint does, while an ordinary not-found and an invalid request keep their 404 and 400.
+    [Fact]
+    public async Task An_internal_audit_failure_is_not_mapped_to_a_client_error_by_the_password_endpoint()
+    {
+        var request = new SetPasswordRequest("quiet-maple-lantern-harbor");
+        var defect = NewController(new StubUserManagement { ThrowOnSetPassword = new Apperture.Core.Application.Audit.AuditInvariantException("the audit row was not found") });
+        var missing = NewController(new StubUserManagement { ThrowOnSetPassword = new InvalidOperationException("User not found.") });
+        var invalid = NewController(new StubUserManagement { ThrowOnSetPassword = new InvalidOperationException("The password is too short.") });
+
+        var setWithDefect = () => defect.SetLocalPassword(TargetUserId, request, CancellationToken.None);
+
+        await setWithDefect.Should().ThrowAsync<Apperture.Core.Application.Audit.AuditInvariantException>(
+            "it reaches the host's handler as the internal error it is, even when its message says 'not found'");
+        (await missing.SetLocalPassword(TargetUserId, request, CancellationToken.None)).Should().BeOfType<NotFoundObjectResult>();
+        (await invalid.SetLocalPassword(TargetUserId, request, CancellationToken.None)).Should().BeOfType<BadRequestObjectResult>();
+    }
+
     [Fact]
     public async Task A_gate_failure_that_is_not_contention_is_not_presented_as_a_retry()
     {
@@ -373,8 +392,11 @@ public sealed class UsersControllerIdentityLinkTests
         public ValueTask RemoveRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 
+        /// <summary>What setting a password throws (IAM-10.2b WP5); nothing set means the call was not expected.</summary>
+        public Exception? ThrowOnSetPassword { get; init; }
+
         public ValueTask SetLocalPasswordAsync(UserId userId, string newPassword, CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
+            throw ThrowOnSetPassword ?? new NotImplementedException();
 
         public ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
         {
