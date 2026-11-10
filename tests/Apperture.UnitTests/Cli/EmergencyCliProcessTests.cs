@@ -18,6 +18,9 @@ public sealed class EmergencyCliProcessTests : IDisposable
     // A truncated file that carries a value an operator would not want echoed back.
     private const string MalformedSettings = "{ \"ConnectionStrings\": { \"DefaultConnection\": \"Server=x;Password=" + Marker + "\" ";
 
+    // The apphost the SDK writes beside the program: with a suffix on Windows, without one elsewhere.
+    private static readonly string Executable = OperatingSystem.IsWindows() ? "Apperture.Cli.Host.exe" : "Apperture.Cli.Host";
+
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "apperture-cli-process-" + Guid.NewGuid().ToString("N"));
 
     public EmergencyCliProcessTests() => CopyExecutable(_directory);
@@ -44,7 +47,7 @@ public sealed class EmergencyCliProcessTests : IDisposable
         Directory.CreateDirectory(target);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "Apperture.Cli.Host.exe",
+            Executable,
             "Apperture.Cli.Host.deps.json",
         };
         using (var document = JsonDocument.Parse(File.ReadAllBytes(deps)))
@@ -63,7 +66,7 @@ public sealed class EmergencyCliProcessTests : IDisposable
                 File.Copy(from, Path.Combine(target, name));
         }
 
-        File.Exists(Path.Combine(target, "Apperture.Cli.Host.exe")).Should().BeTrue("the executable is part of the test project's output");
+        File.Exists(Path.Combine(target, Executable)).Should().BeTrue("the executable is part of the test project's output");
 
         // The Microsoft.Extensions assemblies the host needs are app-local files beside the shipped executable but come from the ASP.NET Core
         // shared framework in this project's output, so the copy declares that framework as well. The code under test is the same executable.
@@ -92,7 +95,7 @@ public sealed class EmergencyCliProcessTests : IDisposable
         else if (File.Exists(settingsFile))
             File.Delete(settingsFile);
 
-        var psi = new ProcessStartInfo(Path.Combine(_directory, "Apperture.Cli.Host.exe"))
+        var psi = new ProcessStartInfo(Path.Combine(_directory, Executable))
         {
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
