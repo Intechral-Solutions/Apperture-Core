@@ -67,17 +67,24 @@ public static class EmergencyCli
             }
             catch (Exception ex)
             {
-                var outcome = EmergencyOutcomeMapper.Map(ex);
-                console.Error.WriteLine($"Error: {outcome.Message}");
-                if (!string.IsNullOrEmpty(outcome.NextStep))
-                    console.Error.WriteLine($"Next: {outcome.NextStep}");
-                return outcome.ExitCode;
+                return ReportSetupFailure(console, ex);
             }
 
             using (provider)
             using (var scope = provider.CreateScope())
             {
-                var runner = CreateRunner(scope.ServiceProvider, console);
+                // Resolving the services is where the connection and credential configuration is first read, so a failure there is a
+                // failure of the command's setup like a failed registration: reported by the outcome map, with its own status.
+                EmergencyCommandRunner runner;
+                try
+                {
+                    runner = CreateRunner(scope.ServiceProvider, console);
+                }
+                catch (Exception ex)
+                {
+                    return ReportSetupFailure(console, ex);
+                }
+
                 return await runner.RunAsync(command, cancellation.Token);
             }
         }
@@ -85,6 +92,15 @@ public static class EmergencyCli
         {
             Console.CancelKeyPress -= onCancel;
         }
+    }
+
+    private static int ReportSetupFailure(IEmergencyConsole console, Exception exception)
+    {
+        var outcome = EmergencyOutcomeMapper.Map(exception);
+        console.Error.WriteLine($"Error: {outcome.Message}");
+        if (!string.IsNullOrEmpty(outcome.NextStep))
+            console.Error.WriteLine($"Next: {outcome.NextStep}");
+        return outcome.ExitCode;
     }
 
     /// <summary>

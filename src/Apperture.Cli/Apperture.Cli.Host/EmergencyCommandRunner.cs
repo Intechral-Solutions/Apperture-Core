@@ -145,18 +145,31 @@ public sealed class EmergencyCommandRunner(
                 "Run 'emergency reset-mfa' to replace it without a gap.");
         }
 
-        var challenge = await mfa.BeginEnrollmentAsync(user.Id, AccountNameOf(user));
-        console.Out.WriteLine("Add this account in an authenticator app:");
-        console.Out.WriteLine(challenge.OtpAuthUri);
-        console.Out.WriteLine($"Manual key: {challenge.ManualEntryKey}");
+        try
+        {
+            var challenge = await mfa.BeginEnrollmentAsync(user.Id, AccountNameOf(user));
+            console.Out.WriteLine("Add this account in an authenticator app:");
+            console.Out.WriteLine(challenge.OtpAuthUri);
+            console.Out.WriteLine($"Manual key: {challenge.ManualEntryKey}");
 
-        var totp = await ReadSecretAsync("Enter the 6-digit authenticator code:", cancellationToken);
-        if (totp is null)
-            return EmergencyExitCodes.InvalidUsage;
+            var totp = await ReadSecretAsync("Enter the 6-digit authenticator code:", cancellationToken);
+            if (totp is null)
+                return EmergencyExitCodes.InvalidUsage;
 
-        // The codes are shown only from the committed result: nothing is printed before the enrolment returns.
-        var codes = await mfa.CompleteEnrollmentAsync(user.Id, totp, AuditActor.EmergencyCli);
-        return ShowCommittedRecoveryCodes(codes, "The authenticator is enrolled.");
+            // The codes are shown only from the committed result: nothing is printed before the enrolment returns.
+            var codes = await mfa.CompleteEnrollmentAsync(user.Id, totp, AuditActor.EmergencyCli);
+            return ShowCommittedRecoveryCodes(codes, "The authenticator is enrolled.");
+        }
+        catch (InvalidOperationException ex) when (ex.GetType() == typeof(InvalidOperationException))
+        {
+            // The service states "already enrolled" and "no pending enrolment" as plain exceptions. When the account became enrolled while
+            // this command ran (another operator finished first) that is a refusal, found out by reading the state and never the message.
+            if (!await mfa.IsEnrolledAsync(user.Id))
+                throw;
+            return Refuse(
+                "An authenticator is already enrolled for this account.",
+                "Run 'emergency reset-mfa' to replace it without a gap.");
+        }
     }
 
     /// <summary>

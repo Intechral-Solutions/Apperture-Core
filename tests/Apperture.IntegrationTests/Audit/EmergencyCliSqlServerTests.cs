@@ -152,10 +152,11 @@ public sealed class EmergencyCliSqlServerTests : IClassFixture<AuditIsolationCat
         TimeSpan? gateWait = null,
         Func<INativeMfaService, INativeMfaService>? decorate = null,
         IAuditVerificationConnectionFactory? verification = null,
+        bool nameTheAccount = true,
         params Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] interceptors)
     {
         // The account is named with the option every command that acts on one takes; status takes none.
-        string[] line = args[0] == "status" ? args : [.. args, "--user-id", a.Id];
+        string[] line = args[0] == "status" || !nameTheAccount ? args : [.. args, "--user-id", a.Id];
         EmergencyCommandLine.TryParse(line, out var command, out var error).Should().BeTrue(error);
 
         // One context for the whole command, as the process has one scope: stage, verify and switch all run on it.
@@ -567,6 +568,19 @@ public sealed class EmergencyCliSqlServerTests : IClassFixture<AuditIsolationCat
         var mfa = a.W.Mfa(db, time: a.Clock);
         (await mfa.ConsumeRecoveryCodeAsync(a.User, a.Codes[0])).Should().BeFalse();
         (await mfa.ConsumeRecoveryCodeAsync(a.User, codes[0])).Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(BothModes))]
+    public async Task With_no_account_named_the_designated_recovery_account_is_found_through_the_real_repository_and_replaced(bool rcsi)
+    {
+        var a = await ArrangeAsync(rcsi);
+        a.Clock.Advance(60);
+
+        var run = await RunAsync(a, ["reset-mfa"], TypesTheNewCode(a), nameTheAccount: false);
+
+        run.Exit.Should().Be(EmergencyExitCodes.Success, run.Console.Complaints);
+        (await a.W.RowsAsync(AuditActionNames.MfaReplaced, a.Id)).Should().ContainSingle("the designated account, not another, was replaced");
     }
 
     [Theory]
