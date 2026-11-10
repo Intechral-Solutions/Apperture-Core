@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Apperture.Cli.Host;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
@@ -69,6 +70,16 @@ public sealed partial class NativeMfaServiceTests
         exit.Should().Be(EmergencyExitCodes.InvalidUsage, "a wrong code is the operator's input, not an internal failure");
         console.ErrorText.ToString().Should().Contain(CodeNotValidMessage);
         console.AllOutput.Should().NotContain("000000").And.NotContain("will not be shown again").And.NotContain("Store these recovery codes");
+
+        // The staged key is shown in its one display before the prompt (the otpauth URI that carries it and the manual key line) and never
+        // again: the refused code does not echo it, and nothing on standard error carries it.
+        var shown = console.OutText.ToString();
+        var key = Regex.Match(shown, @"Manual key: (\S+)").Groups[1].Value;
+        key.Should().NotBeEmpty("the staged key was displayed before the code was asked for");
+        shown.Split('\n').Select(l => l.Trim()).Where(l => l.Contains(key, StringComparison.Ordinal)).Should().SatisfyRespectively(
+            uri => uri.Should().StartWith("otpauth://totp/").And.Contain("secret=" + key),
+            manual => manual.Should().Be("Manual key: " + key));
+        console.ErrorText.ToString().Should().NotContain(key);
         (await harness.Mfa.IsEnrolledAsync(userId)).Should().BeFalse();
         harness.Recorder.Staged.Should().BeEmpty("nothing was committed");
         harness.Recovery.Codes.Should().BeEmpty("no recovery code was created for an enrolment that did not happen");
