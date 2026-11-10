@@ -565,4 +565,47 @@ public sealed class EmergencyCommandRunnerTests
         (await w.RunAsync(console, ["status"])).Should().Be(EmergencyExitCodes.Success);
         console.OutText.ToString().Should().Contain("Authenticator: Enrolled").And.Contain("Recovery codes: 7 available");
     }
+
+    // IAM-10.2b WP5, A10.2b.12 (ruling C-14): when the designated account's authenticator is enrolled and every recovery code has been used,
+    // the status says the codes are exhausted and names the remedy. With codes left, or with no authenticator (whose remedy is enrolment,
+    // which issues codes), it does not.
+    [Theory]
+    [InlineData(true, true, 0, true)]
+    [InlineData(true, true, 1, false)]
+    [InlineData(true, false, 0, false)]
+    [InlineData(false, false, 0, false)]
+    public async Task The_status_says_the_recovery_codes_are_exhausted_and_names_the_remedy_only_when_an_enrolled_account_has_none_left(
+        bool designated, bool enrolled, int unusedCodes, bool exhausted)
+    {
+        var w = new CliWorld();
+        w.Emergency.Setup(e => e.EnsureCanonicalIdentityAsync(AuditActor.EmergencyCli, It.IsAny<CancellationToken>())).Returns(() => ValueTask.CompletedTask);
+        w.Emergency.Setup(e => e.GetPostureAsync(It.IsAny<CancellationToken>()))
+            .Returns(() => ValueTask.FromResult(new EmergencyAccessPosture(
+                IsHealthy: designated && enrolled && unusedCodes > 0,
+                FallbackSafeguardRequired: !(designated && enrolled && unusedCodes > 0),
+                DesignatedUserId: designated ? "usr-1" : null,
+                DesignatedDisplayName: designated ? "Recovery Access" : null,
+                DesignatedIsPlatformAdministrator: designated,
+                LocalCredentialEnabled: designated,
+                NativeMfaEnrolled: enrolled,
+                UnusedRecoveryCodeCount: unusedCodes,
+                DesignatedUsername: designated ? "breakglass" : null)));
+        var console = w.Console(true);
+
+        (await w.RunAsync(console, ["status"])).Should().Be(EmergencyExitCodes.Success);
+
+        var shown = console.OutText.ToString();
+        shown.Should().Contain($"Recovery codes: {unusedCodes} available", "the count is still shown");
+        if (exhausted)
+        {
+            var line = shown.Split('\n').Select(l => l.Trim()).Should().ContainSingle(l => l.Contains("exhausted", StringComparison.Ordinal)).Which;
+            line.Should().Contain("Recovery codes are exhausted").And.Contain("not healthy").And.Contain("Run 'emergency regenerate-codes'");
+        }
+        else
+        {
+            shown.Should().NotContain("exhausted").And.NotContain("regenerate-codes");
+        }
+
+        console.ErrorText.ToString().Should().BeEmpty();
+    }
 }

@@ -82,8 +82,16 @@ public sealed class EmergencyCommandRunner(
         o.WriteLine($"Local credential enabled: {posture.LocalCredentialEnabled}");
         o.WriteLine($"Authenticator: {(posture.NativeMfaEnrolled ? "Enrolled" : "Not enrolled")}");
         o.WriteLine($"Recovery codes: {posture.UnusedRecoveryCodeCount} available");
+        // Ruling C-14 (A10.2b.12): the last code can be used at a sign-in that is never refused, which leaves Recovery Access unhealthy.
+        // The status says so and names the remedy, which needs no healthy posture.
+        if (!string.IsNullOrEmpty(posture.DesignatedUserId) && posture.NativeMfaEnrolled && posture.UnusedRecoveryCodeCount == 0)
+            o.WriteLine(RecoveryCodesExhaustedMessage);
         return EmergencyExitCodes.Success;
     }
+
+    /// <summary>What the status says when the designated account's authenticator is enrolled and every recovery code has been used.</summary>
+    private const string RecoveryCodesExhaustedMessage =
+        "Recovery codes are exhausted: every code has been used, so Recovery Access is not healthy. Run 'emergency regenerate-codes' to get a new set.";
 
     private async Task<int> ProvisionAsync(CancellationToken cancellationToken)
     {
