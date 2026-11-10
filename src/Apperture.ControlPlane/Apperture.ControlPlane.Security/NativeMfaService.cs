@@ -161,7 +161,7 @@ public sealed class NativeMfaService : INativeMfaService
                 var secret = await UnprotectSecretAsync(stored, ct);
                 var unix = _time.GetUtcNow().ToUnixTimeSeconds();
                 if (!Rfc6238Totp.Verify(secret, totpCode, unix, stored.LastUsedStep, out var matchedStep))
-                    throw new InvalidOperationException("The authenticator code is not valid.");
+                    throw new NativeMfaCodeNotValidException();
 
                 await viability.CaptureBeforeForRaiseAsync(owner.Value, ct);
 
@@ -390,7 +390,7 @@ public sealed class NativeMfaService : INativeMfaService
         // step is not accepted, so the step the switch records (this one) never moves backwards and this code is spent once switched.
         var secret = await _protector.UnprotectAsync(candidate.ProtectedSecret, candidate.ProtectorKeyId, cancellationToken);
         if (!Rfc6238Totp.Verify(secret, totpCode, _time.GetUtcNow().ToUnixTimeSeconds(), active.LastUsedStep, out var matchedStep))
-            throw new InvalidOperationException("The authenticator code is not valid.");
+            throw new NativeMfaCodeNotValidException();
 
         // The database decides, in one conditional statement (staged, this version, unexpired, this user, staged against the credential
         // that is active now): the reads above are advice.

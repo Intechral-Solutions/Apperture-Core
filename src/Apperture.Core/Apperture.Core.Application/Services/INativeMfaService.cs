@@ -76,6 +76,22 @@ public interface INativeMfaService
 }
 
 /// <summary>
+/// The authenticator code presented does not match the secret it was checked against (the pending enrolment's, or the staged
+/// replacement's). Nothing was changed and the code may be entered again. It is a distinct type so that a caller never has to read the
+/// message to tell a mistyped code from any other <see cref="InvalidOperationException"/>.
+/// </summary>
+public sealed class NativeMfaCodeNotValidException : InvalidOperationException
+{
+    /// <summary>The message the service has always given for a code that does not match.</summary>
+    public const string DefaultMessage = "The authenticator code is not valid.";
+
+    public NativeMfaCodeNotValidException()
+        : base(DefaultMessage)
+    {
+    }
+}
+
+/// <summary>
 /// A staged replacement of an enrolled authenticator, shown to the operator once: the candidate's identity and version (kept by the
 /// operator's process for the next steps), the secret to add to an authenticator app, and when the candidate expires by the database's
 /// clock. The candidate is not an authenticator until it is switched.
