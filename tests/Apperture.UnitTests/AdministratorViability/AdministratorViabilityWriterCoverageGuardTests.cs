@@ -229,10 +229,22 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         return [.. names];
     }
 
-    private static int CallsOn(string code, string[] receivers, string method) =>
-        receivers.Length == 0
+    /// <summary>
+    /// The calls of <paramref name="method"/> on a receiver named in <paramref name="receivers"/>, directly or null-conditionally (<c>?.</c>),
+    /// and, when <paramref name="resolvedTypes"/> are given, on a store resolved inline from a service provider
+    /// (<c>sp.GetRequiredService&lt;T&gt;().Method(</c>), whatever the provider is called (WP5 pre-hand-over review C3).
+    /// </summary>
+    private static int CallsOn(string code, string[] receivers, string method, params string[] resolvedTypes)
+    {
+        var alternatives = new List<string>();
+        if (receivers.Length > 0)
+            alternatives.Add(@"\b(?:" + string.Join("|", receivers.Select(Regex.Escape)) + ")");
+        if (resolvedTypes.Length > 0)
+            alternatives.Add(@"\bGet(?:Required)?Service<\s*(?:global::)?(?:\w+\.)*(?:" + string.Join("|", resolvedTypes.Select(Regex.Escape)) + @")\s*>\s*\(\s*\)\s*!?");
+        return alternatives.Count == 0
             ? 0
-            : Regex.Matches(code, @"\b(?:" + string.Join("|", receivers.Select(Regex.Escape)) + @")\." + method + @"\(", RegexOptions.CultureInvariant).Count;
+            : Regex.Matches(code, "(?:" + string.Join("|", alternatives) + @")\s*\??\.\s*" + method + @"\(", RegexOptions.CultureInvariant).Count;
+    }
 
     /// <summary>
     /// The <c>var</c> locals a file initializes from <paramref name="type"/>: resolved from a service provider (<c>GetService&lt;T&gt;</c>,
@@ -272,31 +284,48 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     // The receivers of the identity and authenticator stores in a file: found by type, and the conventional field names besides, so that a
     // file that uses a field declared elsewhere (a partial class) is still counted as before. A call of a service method of the same name
     // (for example IUserManagementService.RemoveIdentityLinkAsync) is not a write of the store and is not counted.
+    // The store types of each viability input (the contract and its implementation). A write through a store is found by the type of its
+    // receiver, declared or resolved inline from a service provider.
+    private static readonly string[] UserStoreTypes = ["IUserRepository", "SqlUserRepository"];
+    private static readonly string[] TotpStoreTypes = ["INativeTotpCredentialRepository", "SqlNativeTotpCredentialRepository"];
+    private static readonly string[] RecoveryCodeStoreTypes = ["INativeMfaRecoveryCodeRepository", "SqlNativeMfaRecoveryCodeRepository"];
+    private static readonly string[] RegistrationStoreTypes = ["IEntraInstanceRegistrationRepository", "SqlEntraInstanceRegistrationRepository"];
+    private static readonly string[] PolicyStoreTypes = ["IInstanceAuthUiPolicyRepository", "SqlInstanceAuthUiPolicyRepository"];
+
     private static string[] UserStores(string fileCode) =>
-        [.. ReceiversOf(fileCode, "IUserRepository", "SqlUserRepository").Union(["_userRepository", "_users", "userRepo", "_userRepo"], StringComparer.Ordinal)];
+        [.. ReceiversOf(fileCode, UserStoreTypes).Union(["_userRepository", "_users", "userRepo", "_userRepo"], StringComparer.Ordinal)];
 
     private static string[] TotpStores(string fileCode) =>
-        [.. ReceiversOf(fileCode, "INativeTotpCredentialRepository", "SqlNativeTotpCredentialRepository").Union(["_totp"], StringComparer.Ordinal)];
+        [.. ReceiversOf(fileCode, TotpStoreTypes).Union(["_totp"], StringComparer.Ordinal)];
 
     private static string[] RecoveryCodeStores(string fileCode) =>
-        [.. ReceiversOf(fileCode, "INativeMfaRecoveryCodeRepository", "SqlNativeMfaRecoveryCodeRepository").Union(["_recoveryCodes"], StringComparer.Ordinal)];
+        [.. ReceiversOf(fileCode, RecoveryCodeStoreTypes).Union(["_recoveryCodes"], StringComparer.Ordinal)];
+
+    // The registration and sign-in policy stores, found by type like the others (WP5 pre-hand-over review C2: they were found only by a
+    // name declared with the contract, so a var local or the concrete type was not a receiver).
+    private static int RegistrationCalls(string code, string fileCode, string method) =>
+        CallsOn(code, ReceiversOf(fileCode, RegistrationStoreTypes), method, RegistrationStoreTypes);
+
+    private static int PolicySaveCalls(string code, string fileCode) =>
+        CallsOn(code, ReceiversOf(fileCode, PolicyStoreTypes), "SaveAsync", PolicyStoreTypes);
 
     // The designation has one writer, the conditional setter. The generic update no longer writes it, so a call of the generic update
     // is not a writer of a viability input and is not counted here.
-    private static int DesignationSetterCalls(string code, string fileCode) => CallsOn(code, UserStores(fileCode), "TrySetDesignationAsync");
+    private static int DesignationSetterCalls(string code, string fileCode) => CallsOn(code, UserStores(fileCode), "TrySetDesignationAsync", UserStoreTypes);
 
-    private static int LinkAddCalls(string code, string fileCode) => CallsOn(code, UserStores(fileCode), "AddIdentityLinkAsync");
+    private static int LinkAddCalls(string code, string fileCode) => CallsOn(code, UserStores(fileCode), "AddIdentityLinkAsync", UserStoreTypes);
 
-    private static int LinkRemoveCalls(string code, string fileCode) => CallsOn(code, UserStores(fileCode), "RemoveIdentityLinkAsync");
+    private static int LinkRemoveCalls(string code, string fileCode) => CallsOn(code, UserStores(fileCode), "RemoveIdentityLinkAsync", UserStoreTypes);
 
     private static int LinkProofCalls(string code, string fileCode) =>
-        CallsOn(code, UserStores(fileCode), "CompleteEntraLinkProofAsync") + CallsOn(code, UserStores(fileCode), "UpdateLastAuthenticatedAtAsync");
+        CallsOn(code, UserStores(fileCode), "CompleteEntraLinkProofAsync", UserStoreTypes)
+        + CallsOn(code, UserStores(fileCode), "UpdateLastAuthenticatedAtAsync", UserStoreTypes);
 
     private static int MfaResetCalls(string code, string fileCode) =>
-        CallsOn(code, TotpStores(fileCode), "DeleteAsync") + CallsOn(code, RecoveryCodeStores(fileCode), "DeleteAllAsync");
+        CallsOn(code, TotpStores(fileCode), "DeleteAsync", TotpStoreTypes) + CallsOn(code, RecoveryCodeStores(fileCode), "DeleteAllAsync", RecoveryCodeStoreTypes);
 
     private static int MfaEnrolCalls(string code, string fileCode) =>
-        CallsOn(code, TotpStores(fileCode), "MarkEnrolledAsync") + CallsOn(code, RecoveryCodeStores(fileCode), "ReplaceAllAsync");
+        CallsOn(code, TotpStores(fileCode), "MarkEnrolledAsync", TotpStoreTypes) + CallsOn(code, RecoveryCodeStores(fileCode), "ReplaceAllAsync", RecoveryCodeStoreTypes);
 
     private static readonly Regex PasswordSetCall = R(@"\.SetPasswordAsync\(");
     private static readonly Regex UsernameChangeCall = R(@"_users\.ChangeUsernameAsync\(");
@@ -330,31 +359,29 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             Add(file, Writes.LinkRemove, LinkRemoveCalls(code, code));
             Add(file, Writes.LinkProof, LinkProofCalls(code, code));
 
-            var registrationRepositories = NamesHolding(code, "IEntraInstanceRegistrationRepository");
-            Add(file, Writes.RegistrationCreate, CallsOn(code, registrationRepositories, "AddAsync"));
-            Add(file, Writes.RegistrationUpdate, CallsOn(code, registrationRepositories, "UpdateAsync"));
-            Add(file, Writes.RegistrationDelete, CallsOn(code, registrationRepositories, "DeleteAsync"));
+            Add(file, Writes.RegistrationCreate, RegistrationCalls(code, code, "AddAsync"));
+            Add(file, Writes.RegistrationUpdate, RegistrationCalls(code, code, "UpdateAsync"));
+            Add(file, Writes.RegistrationDelete, RegistrationCalls(code, code, "DeleteAsync"));
             Add(file, Writes.RegistrationActivate, RegistrationActivateCall.Matches(code).Count);
 
-            var policyRepositories = NamesHolding(code, "IInstanceAuthUiPolicyRepository");
-            Add(file, Writes.PolicySave, CallsOn(code, policyRepositories, "SaveAsync"));
+            Add(file, Writes.PolicySave, PolicySaveCalls(code, code));
 
             Add(file, Writes.DesignationFlagUpdate, DesignationSetterCalls(code, code));
 
             Add(file, Writes.MfaReset, MfaResetCalls(code, code));
             Add(file, Writes.MfaEnrol, MfaEnrolCalls(code, code));
-            Add(file, Writes.MfaPendingWrite, CallsOn(code, TotpStores(code), "UpsertPendingAsync"));
-            Add(file, Writes.MfaConsume, CallsOn(code, RecoveryCodeStores(code), "MarkConsumedAsync"));
+            Add(file, Writes.MfaPendingWrite, CallsOn(code, TotpStores(code), "UpsertPendingAsync", TotpStoreTypes));
+            Add(file, Writes.MfaConsume, CallsOn(code, RecoveryCodeStores(code), "MarkConsumedAsync", RecoveryCodeStoreTypes));
 
             // The replacement candidates, found by the type their receiver was declared with (U6): staging, verifying and removing a
             // candidate change no posture input; the switch does. The concrete type and a var local resolved from a service provider
             // are receivers too (SR-1).
             var candidateStores = CandidateStoreNames(code);
-            Add(file, Writes.MfaCandidateStage, CallsOn(code, candidateStores, "StageAsync"));
-            Add(file, Writes.MfaCandidateVerify, CallsOn(code, candidateStores, "MarkVerifiedAsync"));
-            Add(file, Writes.MfaCandidateSwitch, CallsOn(code, candidateStores, "SwitchAsync"));
-            Add(file, Writes.MfaCandidateDiscard, CallsOn(code, candidateStores, "DiscardAsync"));
-            Add(file, Writes.MfaStep, CallsOn(code, TotpStores(code), "UpdateLastUsedAsync"));
+            Add(file, Writes.MfaCandidateStage, CallsOn(code, candidateStores, "StageAsync", CandidateContract, CandidateImplementation));
+            Add(file, Writes.MfaCandidateVerify, CallsOn(code, candidateStores, "MarkVerifiedAsync", CandidateContract, CandidateImplementation));
+            Add(file, Writes.MfaCandidateSwitch, CallsOn(code, candidateStores, "SwitchAsync", CandidateContract, CandidateImplementation));
+            Add(file, Writes.MfaCandidateDiscard, CallsOn(code, candidateStores, "DiscardAsync", CandidateContract, CandidateImplementation));
+            Add(file, Writes.MfaStep, CallsOn(code, TotpStores(code), "UpdateLastUsedAsync", TotpStoreTypes));
             Add(file, Writes.PasswordSet, PasswordSetCall.Matches(code).Count);
             Add(file, Writes.UsernameChange, UsernameChangeCall.Matches(code).Count);
         }
@@ -434,6 +461,32 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         }
 
         throw new InvalidOperationException($"{methodName} has no closing brace.");
+    }
+
+    /// <summary>The body of every declaration of <paramref name="methodName"/> in <paramref name="code"/> (each overload), in order.</summary>
+    private static List<string> MethodBodies(string code, string methodName)
+    {
+        var bodies = new List<string>();
+        foreach (Match declaration in Regex.Matches(
+                     code,
+                     @"^[ \t]*(?:public|private|internal|protected)[^\r\n]* " + Regex.Escape(methodName) + @"\(",
+                     RegexOptions.Multiline | RegexOptions.CultureInvariant))
+        {
+            var open = code.IndexOf('{', declaration.Index);
+            var depth = 0;
+            for (var i = open; i < code.Length; i++)
+            {
+                if (code[i] == '{')
+                    depth++;
+                else if (code[i] == '}' && --depth == 0)
+                {
+                    bodies.Add(code[declaration.Index..(i + 1)]);
+                    break;
+                }
+            }
+        }
+
+        return bodies;
     }
 
     // ------------------------------------------------------------------- tests
@@ -779,16 +832,16 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         Writes.CredentialDisable => DisableCall.Matches(code).Count,
         Writes.LinkAdd => LinkAddCalls(code, fileCode),
         Writes.LinkRemove => LinkRemoveCalls(code, fileCode),
-        Writes.RegistrationCreate => CallsOn(code, NamesHolding(fileCode, "IEntraInstanceRegistrationRepository"), "AddAsync"),
-        Writes.RegistrationUpdate => CallsOn(code, NamesHolding(fileCode, "IEntraInstanceRegistrationRepository"), "UpdateAsync"),
-        Writes.RegistrationDelete => CallsOn(code, NamesHolding(fileCode, "IEntraInstanceRegistrationRepository"), "DeleteAsync"),
+        Writes.RegistrationCreate => RegistrationCalls(code, fileCode, "AddAsync"),
+        Writes.RegistrationUpdate => RegistrationCalls(code, fileCode, "UpdateAsync"),
+        Writes.RegistrationDelete => RegistrationCalls(code, fileCode, "DeleteAsync"),
         Writes.RegistrationActivate => RegistrationActivateCall.Matches(code).Count,
-        Writes.PolicySave => CallsOn(code, NamesHolding(fileCode, "IInstanceAuthUiPolicyRepository"), "SaveAsync"),
+        Writes.PolicySave => PolicySaveCalls(code, fileCode),
         Writes.UserCreatedWithRoleIds => NewUser.Matches(code).Count(m => !IsEmpty(RoleIdsArgument(code, m.Index + m.Length))),
         Writes.DesignationFlagUpdate => DesignationSetterCalls(code, fileCode),
         Writes.MfaReset => MfaResetCalls(code, fileCode),
         Writes.MfaEnrol => MfaEnrolCalls(code, fileCode),
-        Writes.MfaCandidateSwitch => CallsOn(code, CandidateStoreNames(fileCode), "SwitchAsync"),
+        Writes.MfaCandidateSwitch => CallsOn(code, CandidateStoreNames(fileCode), "SwitchAsync", CandidateContract, CandidateImplementation),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "not an integrated write kind"),
     };
 
@@ -935,10 +988,16 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     {
         var code = StripComments(Source(UserRepositoryFile));
 
+        // Every declaration of each name, so an overload declared first cannot hide another (WP5 pre-hand-over review C3).
         foreach (var method in new[] { "UpdateAsync", "UpdateCoreAsync" })
         {
-            R(@"IsBreakGlassEligible\s*=[^=]").IsMatch(MethodBody(code, method))
-                .Should().BeFalse($"{method}: a copy of a user read earlier must not set or clear the designation");
+            var bodies = MethodBodies(code, method);
+            bodies.Should().NotBeEmpty($"{method} must be declared");
+            foreach (var body in bodies)
+            {
+                R(@"IsBreakGlassEligible\s*=[^=]").IsMatch(body)
+                    .Should().BeFalse($"{method}: a copy of a user read earlier must not set or clear the designation");
+            }
         }
 
         var core = MethodBody(code, "UpdateCoreAsync");
@@ -1279,9 +1338,32 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     private static readonly Regex ViabilityEntityType = R(
         @"\b(?:UserRoleEntity|LocalCredentialEntity|IdentityLinkEntity|UserTotpCredentialEntity|UserMfaRecoveryCodeEntity|UserTotpReplacementCandidateEntity|UserEntity)\b");
 
-    /// <summary>A SQL statement that writes one of those tables or the users table, with the keyword in any case.</summary>
+    /// <summary>One of those tables or the users table as SQL names it, schema and brackets optional.</summary>
+    private const string SqlViabilityTable =
+        @"(?:\[?dbo\]?\.)?\[?(?:UserRoles|LocalCredentials|IdentityLinks|UserTotpCredentials|UserMfaRecoveryCodes|UserTotpReplacementCandidates|Users)\]?\b";
+
+    /// <summary>
+    /// A SQL statement that writes one of those tables or the users table, keywords and table names in any case: the table named after the
+    /// verb (<c>INTO</c> optional), or an alias written and the table named after <c>FROM</c> (<c>UPDATE c SET … FROM LocalCredentials c</c>,
+    /// <c>DELETE ur FROM UserRoles ur</c>) (WP5 pre-hand-over review C3).
+    /// </summary>
     private static readonly Regex RawViabilityWrite = R(
-        @"(?i:\b(?:update|delete\s+from|delete|insert\s+into|merge(?:\s+into)?))\s+(?:\[?dbo\]?\.)?\[?(?:UserRoles|LocalCredentials|IdentityLinks|UserTotpCredentials|UserMfaRecoveryCodes|UserTotpReplacementCandidates|Users)\]?\b");
+        @"(?i)\b(?:update\s+" + SqlViabilityTable
+        + @"|update\s+\[?\w+\]?\s+set\b[^;""]*?\bfrom\s+" + SqlViabilityTable
+        + @"|delete\s+(?:from\s+)?" + SqlViabilityTable
+        + @"|delete\s+\[?\w+\]?\s+from\s+" + SqlViabilityTable
+        + @"|insert\s+(?:into\s+)?" + SqlViabilityTable
+        + @"|merge\s+(?:into\s+)?" + SqlViabilityTable + ")");
+
+    /// <summary>
+    /// The names of contexts a file makes from a factory (<c>var db = await factory.CreateDbContextAsync()</c>), counted as contexts of the
+    /// application's model only in a file that names that model at all (WP5 pre-hand-over review C3).
+    /// </summary>
+    private static IEnumerable<string> FactoryContexts(string code) =>
+        code.Contains("AppertureDbContext", StringComparison.Ordinal)
+            ? Regex.Matches(code, @"\b(?:var|AppertureDbContext)\s+(\w+)\s*=\s*(?:await\s+)?[^;]*?\.CreateDbContext(?:Async)?\s*\(", RegexOptions.CultureInvariant)
+                .Select(m => m.Groups[1].Value)
+            : [];
 
     /// <summary>
     /// Every way a production file outside the persistence layer could change a viability input without a repository the inventory counts:
@@ -1291,17 +1373,22 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     private static List<string> DirectViabilityTableAccess(string file, string code)
     {
         var found = new List<string>();
-        var contexts = ReceiversOf(code, "AppertureDbContext");
+        var contexts = ReceiversOf(code, "AppertureDbContext").Union(FactoryContexts(code), StringComparer.Ordinal).ToArray();
         if (contexts.Length > 0)
         {
-            var receiver = @"\b(?:" + string.Join("|", contexts.Select(Regex.Escape)) + @")\.";
+            var receiver = @"\b(?:" + string.Join("|", contexts.Select(Regex.Escape)) + @")\s*\??\.\s*";
             foreach (Match m in Regex.Matches(code, receiver + "(" + string.Join("|", ViabilitySets) + @")\b", RegexOptions.CultureInvariant))
                 found.Add($"{file}: the context's {m.Groups[1].Value} set");
-            foreach (Match m in Regex.Matches(
-                         code,
-                         receiver + @"Users\b[^;]*?\b(ExecuteUpdate|ExecuteDelete|Add|AddRange|Remove|RemoveRange|Update|UpdateRange|Attach|AttachRange)\w*\(",
-                         RegexOptions.CultureInvariant))
-                found.Add($"{file}: a write through the context's Users set ({m.Groups[1].Value})");
+
+            // The users set carries the designation. An untracked read is not a write; anything else is, or can become one: a tracked read
+            // whose entity is changed and saved (WP5 pre-hand-over review C3), a query that is bulk-updated, an add, a removal or an attach.
+            foreach (Match m in Regex.Matches(code, receiver + @"Users\b[^;]*", RegexOptions.CultureInvariant))
+            {
+                var statement = m.Value;
+                if (!statement.Contains(".AsNoTracking()", StringComparison.Ordinal)
+                    || Regex.IsMatch(statement, @"\.\s*(?:ExecuteUpdate|ExecuteDelete)(?:Async)?\s*\(", RegexOptions.CultureInvariant))
+                    found.Add($"{file}: the context's Users set, other than an untracked read");
+            }
         }
 
         foreach (Match m in ViabilityEntityType.Matches(code))
@@ -1321,6 +1408,113 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
 
         direct.Should().BeEmpty(
             "a role assignment, a credential, an identity link, the designation or an authenticator changes only through the repositories the writer inventory counts, where the gate, the guard and the audited unit apply");
+    }
+
+    // ---- WP5 (pre-hand-over review C1): inside the persistence layer and its migrations ----
+
+    private const string PersistenceProject = "Apperture.Persistence/Apperture.Persistence.SqlServer/";
+
+    /// <summary>A reference to a viability table in the persistence layer: its set, its entity, the designation, or SQL that writes it.</summary>
+    private static readonly Regex ReferencesViabilityTable = R(
+        @"\.(?:UserRoles|LocalCredentials|IdentityLinks|UserTotpCredentials|UserMfaRecoveryCodes|UserTotpReplacementCandidates|EntraInstanceRegistrations|InstanceAuthUiPolicies)\b"
+        + @"|\b(?:UserRoleEntity|LocalCredentialEntity|IdentityLinkEntity|UserTotpCredentialEntity|UserMfaRecoveryCodeEntity|UserTotpReplacementCandidateEntity|EntraInstanceRegistrationEntity|InstanceAuthUiPolicyEntity)\b"
+        + @"|\bIsBreakGlassEligible\b"
+        + @"|(?i:\b(?:update|delete|insert|merge)\b[^;""\n]{0,120}\b(?:UserRoles|LocalCredentials|IdentityLinks|UserTotpCredentials|UserMfaRecoveryCodes|UserTotpReplacementCandidates|EntraInstanceRegistrations|InstanceAuthUiPolicies)\b)");
+
+    /// <summary>
+    /// Every persistence file that touches a viability table, with what it is. The guard counts writes outside this layer by the store
+    /// contracts' members, so a new store, reader or writer here that reaches a viability table is a way in until it is classified: a new
+    /// contract's implementation must join <see cref="ViabilityStoreMembers"/> (and the scan), a writer that is not a store must be justified.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> ViabilityPersistenceFiles = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        [PersistenceProject + "AppertureDbContext.cs"] = "the model: the sets and their mapping",
+        [PersistenceProject + "Audit/AuditActorEvidence.cs"] = "read, untracked: the identity links that describe an audit row's actor",
+        [PersistenceProject + "Entities/EntraInstanceRegistrationEntity.cs"] = "entity",
+        [PersistenceProject + "Entities/IdentityLinkEntity.cs"] = "entity",
+        [PersistenceProject + "Entities/InstanceAuthUiPolicyEntity.cs"] = "entity",
+        [PersistenceProject + "Entities/LocalCredentialEntity.cs"] = "entity",
+        [PersistenceProject + "Entities/UserEntity.cs"] = "entity, with the designation column",
+        [PersistenceProject + "Entities/UserRoleEntity.cs"] = "entity",
+        [PersistenceProject + "Entities/UserTotpCredentialEntity.cs"] = "entities of the authenticator and what belongs to it",
+        [PersistenceProject + "SqlAdministratorFactsReader.cs"] = "read: the administrator facts the viability service evaluates",
+        [PersistenceProject + "SqlEntraInstanceRegistrationRepository.cs"] = "store: IEntraInstanceRegistrationRepository",
+        [PersistenceProject + "SqlInstanceAuthUiPolicyRepository.cs"] = "store: IInstanceAuthUiPolicyRepository",
+        [PersistenceProject + "SqlLocalCredentialRepository.cs"] = "store: ILocalCredentialRepository",
+        [PersistenceProject + "SqlNativeMfaReplacementCandidateRepository.cs"] = "store: INativeMfaReplacementCandidateRepository",
+        [PersistenceProject + "SqlNativeMfaRepositories.cs"] = "stores: INativeTotpCredentialRepository and INativeMfaRecoveryCodeRepository",
+        [PersistenceProject + "SqlRoleRepository.cs"] = "store: IRoleRepository",
+        [PersistenceProject + "SqlUserRepository.cs"] = "store: IUserRepository",
+        [PersistenceProject + "UsernameBackfill.cs"] =
+            "startup step: rewrites a Local link's sign-in name to its normalized form; it never adds, removes or moves a link, so no viability input changes",
+    };
+
+    /// <summary>The types each store, reader and writer file above declares: a new type in one of them is a new way in, as a new file is.</summary>
+    private static readonly IReadOnlyDictionary<string, string[]> ViabilityPersistenceTypes = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        [PersistenceProject + "SqlAdministratorFactsReader.cs"] = ["SqlAdministratorFactsReader"],
+        [PersistenceProject + "SqlEntraInstanceRegistrationRepository.cs"] = ["SqlEntraInstanceRegistrationRepository"],
+        [PersistenceProject + "SqlInstanceAuthUiPolicyRepository.cs"] = ["SqlInstanceAuthUiPolicyRepository"],
+        [PersistenceProject + "SqlLocalCredentialRepository.cs"] = ["SqlLocalCredentialRepository"],
+        [PersistenceProject + "SqlNativeMfaReplacementCandidateRepository.cs"] = ["CandidateRow", "LockedCredential", "SqlNativeMfaReplacementCandidateRepository"],
+        [PersistenceProject + "SqlNativeMfaRepositories.cs"] = ["SqlNativeMfaRecoveryCodeRepository", "SqlNativeTotpCredentialRepository"],
+        [PersistenceProject + "SqlRoleRepository.cs"] = ["SqlRoleRepository"],
+        [PersistenceProject + "SqlUserRepository.cs"] = ["SqlUserRepository"],
+        [PersistenceProject + "UsernameBackfill.cs"] = ["UsernameBackfill", "UsernameBackfillReport"],
+    };
+
+    [Fact]
+    public void Only_the_classified_persistence_files_touch_a_viability_table_and_they_declare_only_their_classified_types()
+    {
+        var touching = ProductionSource()
+            .Where(s => s.Relative.StartsWith(PersistenceProject, StringComparison.Ordinal))
+            .Where(s => ReferencesViabilityTable.IsMatch(StripComments(s.Text)))
+            .Select(s => s.Relative)
+            .ToList();
+
+        touching.Should().BeEquivalentTo(
+            ViabilityPersistenceFiles.Keys,
+            "a persistence file that reaches a viability table is a store the guard counts, a reader, the model, or a justified exception");
+        ViabilityPersistenceFiles.Values.Should().OnlyContain(why => why.Length > 0);
+
+        foreach (var (file, types) in ViabilityPersistenceTypes)
+        {
+            Regex.Matches(StripComments(Source(file)), @"\b(?:class|record|struct|interface)\s+(\w+)", RegexOptions.CultureInvariant)
+                .Select(m => m.Groups[1].Value)
+                .Distinct(StringComparer.Ordinal)
+                .Should().BeEquivalentTo(types, $"{file} declares only its classified types");
+        }
+    }
+
+    /// <summary>A migration's data change of a viability table: SQL that writes one, a designation set in SQL, or a seeding call aimed at one.</summary>
+    private static readonly Regex MigrationViabilityDataWrite = R(
+        @"(?i:\b(?:update|delete|insert|merge)\b[^;""\n]{0,120}\b(?:UserRoles|LocalCredentials|IdentityLinks|UserTotpCredentials|UserMfaRecoveryCodes|UserTotpReplacementCandidates|EntraInstanceRegistrations|InstanceAuthUiPolicies)\b)"
+        + @"|(?i:\bset\b[^;""\n]{0,80}\[?IsBreakGlassEligible\]?\s*=\s*[01]\b)"
+        + @"|\b(?:InsertData|UpdateData|DeleteData)\(\s*(?:table:\s*)?""(?:UserRoles|LocalCredentials|IdentityLinks|UserTotpCredentials|UserMfaRecoveryCodes|UserTotpReplacementCandidates|EntraInstanceRegistrations|InstanceAuthUiPolicies|Users)""");
+
+    /// <summary>
+    /// The migrations that change rows of a viability table, each with why that changes no viability input. A data migration runs at
+    /// deployment, outside the gate and the guard, so a new one that disabled credentials or moved roles would be a way around both.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> ViabilityDataMigrations = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["20260323052316_AddInstanceAuthUiPolicy.cs"] =
+            "seeds the default sign-in policy row as the table is created: Local shown on the primary sign-in page, no redirect, so it hides no method",
+        ["20261108120000_Iam102b_MfaReplacementCandidates.cs"] = "gives each existing authenticator row its new credential identifier; an identifier only",
+    };
+
+    [Fact]
+    public void Only_the_enumerated_migrations_change_rows_of_a_viability_table()
+    {
+        var migrations = Path.Combine(RepoRoot(), "src", PersistenceProject, "Migrations");
+        var writing = Directory.EnumerateFiles(migrations, "*.cs", SearchOption.TopDirectoryOnly)
+            .Where(p => !p.EndsWith(".Designer.cs", StringComparison.Ordinal) && !p.EndsWith("ModelSnapshot.cs", StringComparison.Ordinal))
+            .Where(p => MigrationViabilityDataWrite.IsMatch(StripComments(File.ReadAllText(p))))
+            .Select(p => Path.GetFileName(p))
+            .ToList();
+
+        writing.Should().BeEquivalentTo(ViabilityDataMigrations.Keys, "a data migration of a viability table must be reviewed and justified here");
+        ViabilityDataMigrations.Values.Should().OnlyContain(why => why.Length > 0);
     }
 
     [Fact]
@@ -1343,6 +1537,14 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             ("static async Task R(AppertureDbContext db, UserId id) { var totp = new Apperture.Persistence.SqlServer.SqlNativeTotpCredentialRepository(db); await totp.UpsertPendingAsync(id); }", Writes.MfaPendingWrite),
             ("static async Task R(AppertureDbContext db, UserId id) { var users = new SqlUserRepository(db, null!); await users.RemoveIdentityLinkAsync(id, IdentitySource.Local, \"x\"); }", Writes.LinkRemove),
             ("static async Task R(IServiceProvider sp, UserId id) { var totp = ActivatorUtilities.CreateInstance<SqlNativeTotpCredentialRepository>(sp); await totp.MarkEnrolledAsync(id); }", Writes.MfaEnrol),
+            // The pre-hand-over review's shapes: the registration and policy stores by type (C2), a store resolved inline and a
+            // null-conditional receiver (C3).
+            ("static async Task R(IServiceProvider sp, string id) { var registrations = sp.GetRequiredService<IEntraInstanceRegistrationRepository>(); await registrations.DeleteAsync(id); }", Writes.RegistrationDelete),
+            ("static async Task R(AppertureDbContext db, EntraInstanceRegistration r) { var store = new SqlEntraInstanceRegistrationRepository(db); await store.UpdateAsync(r); }", Writes.RegistrationUpdate),
+            ("static async Task R(IServiceProvider sp, InstanceAuthUiPolicy p) { var policies = sp.GetRequiredService<IInstanceAuthUiPolicyRepository>(); await policies.SaveAsync(p, null); }", Writes.PolicySave),
+            ("static Task R(IServiceProvider sp, UserId id) => sp.GetRequiredService<INativeMfaRecoveryCodeRepository>().DeleteAllAsync(id).AsTask();", Writes.MfaReset),
+            ("static Task R(IServiceProvider sp, UserId id) => sp.GetService<global::Apperture.Core.Application.Services.IUserRepository>()!.TrySetDesignationAsync(id, false, true).AsTask();", Writes.DesignationFlagUpdate),
+            ("private readonly IUserRepository? _maybe; Task? R(UserId id) => _maybe?.RemoveIdentityLinkAsync(id, IdentitySource.Entra, \"x\").AsTask();", Writes.LinkRemove),
         };
         foreach (var (text, kind) in throughAStore)
         {
@@ -1359,6 +1561,16 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             "static void R(AppertureDbContext db) => db.Add(new UserRoleEntity());",
             "const string Sql = \"update [dbo].[UserTotpCredentials] set IsEnrolled = 0\";",
             "const string Sql = \"MERGE INTO UserMfaRecoveryCodes AS t USING s ON 1 = 0 WHEN NOT MATCHED THEN INSERT DEFAULT VALUES;\";",
+            // The pre-hand-over review's shapes (C3): a context from a factory, the designation changed on a tracked read and on a query
+            // that is bulk-updated, and SQL with a lower-case table, an alias, or INSERT without INTO.
+            "sealed class W(IDbContextFactory<AppertureDbContext> factory) { async Task R(string id) { await using var db = await factory.CreateDbContextAsync(); db.UserRoles.RemoveRange(db.UserRoles.Where(r => r.UserId == id)); await db.SaveChangesAsync(); } }",
+            "private readonly AppertureDbContext _db; async Task R(string id) { var row = await _db.Users.SingleAsync(u => u.Id == id); row.IsBreakGlassEligible = false; await _db.SaveChangesAsync(); }",
+            "private readonly AppertureDbContext _db; Task<int> R(string id) { var q = _db.Users.Where(u => u.Id == id); return q.ExecuteUpdateAsync(s => s.SetProperty(u => u.IsBreakGlassEligible, false)); }",
+            "private readonly AppertureDbContext _db; Task<int> R(string id) => _db.Users.AsNoTracking().Where(u => u.Id == id).ExecuteUpdateAsync(s => s.SetProperty(u => u.IsBreakGlassEligible, false));",
+            "const string Sql = \"update users set IsBreakGlassEligible = 0 where Id = @id\";",
+            "const string Sql = \"UPDATE c SET IsDisabled = 1 FROM LocalCredentials c WHERE c.UserId = @id\";",
+            "const string Sql = \"DELETE ur FROM UserRoles ur WHERE ur.UserId = @id\";",
+            "const string Sql = \"INSERT UserRoles (UserId, RoleId) VALUES (@u, @r)\";",
         };
         foreach (var text in aroundTheStores)
             DirectViabilityTableAccess("Some/New/Writer.cs", StripComments(text)).Should().NotBeEmpty(text);
@@ -1477,22 +1689,69 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             },
         };
 
+    /// <summary>The classified members that have more than one signature today, with how many; each signature is classified alike.</summary>
+    private static readonly IReadOnlyDictionary<(Type Contract, string Member), int> KnownOverloads = new Dictionary<(Type, string), int>
+    {
+        // Each pair takes the identity either as source and external id or as a provider identity key; both of a pair are the same kind.
+        [(typeof(Apperture.Core.Application.Services.IUserRepository), "AddIdentityLinkAsync")] = 2,
+        [(typeof(Apperture.Core.Application.Services.IUserRepository), "FindIdentityLinkAsync")] = 2,
+        [(typeof(Apperture.Core.Application.Services.IUserRepository), "GetByIdentityLinkAsync")] = 2,
+        [(typeof(Apperture.Core.Application.Services.IUserRepository), "UpdateLastAuthenticatedAtAsync")] = 2,
+    };
+
     [Fact]
     public void Each_viability_store_member_is_classified_so_a_new_write_method_cannot_go_uncounted()
     {
         foreach (var (contract, classified) in ViabilityStoreMembers)
         {
-            var members = contract
+            var overloads = contract
                 .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
-                .Select(m => m.Name)
-                .Distinct(StringComparer.Ordinal)
-                .OrderBy(n => n, StringComparer.Ordinal)
-                .ToList();
+                .GroupBy(m => m.Name, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
-            members.Should().BeEquivalentTo(
+            overloads.Keys.Should().BeEquivalentTo(
                 classified.Keys,
                 $"{contract.Name} holds a viability input: a member added to it must be classified here, and counted by the guard if it writes one");
+            // A further overload of a classified name is a new member too (WP5 pre-hand-over review C3): the classification is by name, so
+            // the number of signatures of each name is pinned as well (one, unless listed).
+            overloads.Where(o => o.Value != KnownOverloads.GetValueOrDefault((contract, o.Key), 1))
+                .Should().BeEmpty($"{contract.Name}: each classified member has the signatures classified for it");
             classified.Values.Should().OnlyContain(why => why.Length > 0);
+        }
+    }
+
+    /// <summary>
+    /// A store's implementation is reached by its concrete type too, and the guard counts calls by the contract's member names. So the
+    /// concrete types offer nothing public beyond their contracts: a write method added only to an implementation, and called through the
+    /// concrete type, would otherwise be a write no rule counts (WP5 pre-hand-over review C1).
+    /// </summary>
+    [Fact]
+    public void The_store_implementations_expose_nothing_beyond_their_classified_contracts()
+    {
+        var persistence = typeof(Apperture.Persistence.SqlServer.SqlUserRepository).Assembly;
+        foreach (var contract in ViabilityStoreMembers.Keys)
+        {
+            var implementations = persistence.GetTypes().Where(t => t.IsClass && !t.IsAbstract && contract.IsAssignableFrom(t)).ToList();
+            implementations.Should().NotBeEmpty($"{contract.Name} is implemented in the persistence layer");
+            foreach (var implementation in implementations)
+            {
+                // A further application contract on a store implementation is a way in this guard does not classify.
+                implementation.GetInterfaces()
+                    .Where(i => !ViabilityStoreMembers.ContainsKey(i))
+                    .Where(i => !(i.Namespace ?? "").StartsWith("System", StringComparison.Ordinal) && !(i.Namespace ?? "").StartsWith("Microsoft", StringComparison.Ordinal))
+                    .Select(i => i.FullName)
+                    .Should().BeEmpty($"{implementation.Name} implements only contracts this guard classifies");
+
+                var extra = implementation
+                    .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
+                    .Where(m => !m.IsSpecialName)
+                    .Select(m => m.Name)
+                    .Where(name => !implementation.GetInterfaces().Any(i => i.GetMethods().Any(im => im.Name == name)))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+
+                extra.Should().BeEmpty($"{implementation.Name} offers only its contracts' members, which this guard classifies");
+            }
         }
     }
 
