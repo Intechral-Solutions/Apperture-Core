@@ -21,6 +21,21 @@ public static class EmergencyCli
     public static Task<int> RunAsync(string[] args, IConfiguration config, string environmentName) =>
         RunAsync(args, config, environmentName, console: null, configureServices: null);
 
+    public static Task<int> RunAsync(
+        string[] args,
+        IConfiguration config,
+        string environmentName,
+        IEmergencyConsole? console,
+        Action<IServiceCollection>? configureServices) =>
+        RunAsync(args, () => config, () => environmentName, console, configureServices);
+
+    /// <summary>
+    /// Runs the command with its configuration and environment read lazily, after usage has been settled: a configuration that cannot be
+    /// loaded (a malformed settings file) or an environment that cannot be resolved is a failure of the command's setup, reported by the
+    /// outcome map with status 6 and its type names, never an unhandled exception and never a message that could carry a configured value.
+    /// </summary>
+    /// <param name="loadConfiguration">Reads the configuration; called once, only for a command that will run.</param>
+    /// <param name="resolveEnvironmentName">Reads the environment name; called once, only for a command that will run.</param>
     /// <param name="console">The console to use; the process console when null.</param>
     /// <param name="configureServices">
     /// Replaces registrations after the production composition (a test points the container at a throwaway catalog and a test protector).
@@ -28,8 +43,8 @@ public static class EmergencyCli
     /// </param>
     public static async Task<int> RunAsync(
         string[] args,
-        IConfiguration config,
-        string environmentName,
+        Func<IConfiguration> loadConfiguration,
+        Func<string> resolveEnvironmentName,
         IEmergencyConsole? console,
         Action<IServiceCollection>? configureServices)
     {
@@ -63,7 +78,7 @@ public static class EmergencyCli
             ServiceProvider provider;
             try
             {
-                provider = BuildProvider(config, environmentName, configureServices);
+                provider = BuildProvider(loadConfiguration(), resolveEnvironmentName(), configureServices);
             }
             catch (Exception ex)
             {

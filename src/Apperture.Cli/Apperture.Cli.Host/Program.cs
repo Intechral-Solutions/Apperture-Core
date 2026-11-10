@@ -7,10 +7,12 @@ using Microsoft.Extensions.DependencyInjection;
 var argsList = args.Length > 0 ? args : ["--help"];
 var (subcommand, subArgs) = ParseArgs(argsList);
 
-var config = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json", optional: true)
-    .AddEnvironmentVariables()
-    .Build();
+// The emergency command reads its own configuration, inside its outcome map, so a settings file that cannot be loaded ends it with the
+// documented internal-failure status instead of an unhandled exception. It needs nothing from the bootstrap container built below.
+if (subcommand.Equals("emergency", StringComparison.OrdinalIgnoreCase))
+    return await EmergencyCli.RunAsync(subArgs, LoadConfiguration, CliEnvironmentResolver.GetEnvironmentName, console: null, configureServices: null);
+
+var config = LoadConfiguration();
 
 var environmentName = CliEnvironmentResolver.GetEnvironmentName();
 var services = new ServiceCollection();
@@ -26,8 +28,6 @@ try
         case "bootstrap":
             await RunBootstrapAsync(bootstrapCli, subArgs);
             break;
-        case "emergency":
-            return await EmergencyCli.RunAsync(subArgs, config, environmentName);
         case "--help":
         case "-h":
         case "help":
@@ -46,6 +46,12 @@ catch (Exception ex)
 }
 
 return 0;
+
+static IConfiguration LoadConfiguration() =>
+    new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: true)
+        .AddEnvironmentVariables()
+        .Build();
 
 static (string Subcommand, string[] SubArgs) ParseArgs(string[] a)
 {
