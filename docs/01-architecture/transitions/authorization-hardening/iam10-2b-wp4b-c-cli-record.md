@@ -6,7 +6,7 @@
 | Branch | `feat/iam10-2b-wp4bc-cli`, worktree `F:\Code\Apperture\wt-iam10-2b-wp4bc-cli`, **local only**: not pushed, no pull request, the protected IAM branch is not advanced |
 | Baseline | `ffe92b7287b81281da82b66e195cfa70b36e34f0`, the accepted services package (SR-1 remediated). **The protected IAM branch `feat/iam-10.2b-administrator-viability` is still at `1c1030ad`**, ten commits behind this baseline, and `1c1030ad` is an ancestor of `ffe92b72`. The brief assumed the branch had been fast-forwarded; it had not. Nothing was done about it (advancing IAM is out of scope): this branch starts from the exact accepted commit, so a later fast-forward of IAM to `ffe92b72` leaves this branch based on IAM's head |
 | Scope | `emergency` commands only: `reset-mfa` as the replacement workflow, the explicit bare reset, the typed-outcome and exit-status map, recovery-code display, the console seam, the composition and source rules. Not WP5, not OPS-1, not environment work. Accepted services and Foundation 1A to 1D are unchanged except one typed exception (section 7) |
-| Code commits | `658d7a6c` (production), `1e58c2fd` (tests), `a51b59df` (review fixes, section 9) |
+| Code commits | `658d7a6c` (production), `1e58c2fd` (tests), `a51b59df` (review fixes, section 9); the review remediation (section 13): `db187a92` (R-1, tests only), `ac773600` and `7a35d6c5` (R-2, the one production change and its process tests) |
 | Documentation | this record and its [review brief](iam10-2b-wp4b-c-cli-review-brief.md) |
 
 ## 1. Requirements and their disposition
@@ -171,3 +171,61 @@ Notes. R4 is the consequential one for an unknown outcome: after a switch that m
 * **Archive:** `G:\Backup\Apperture-Core-worktree-evidence\2026-11-09\wt-iam10-2b-wp4bc-cli-evidence`: 157 files plus `SHA256SUMS.txt` (CRLF, backslash paths: verify with PowerShell `Get-FileHash`), verified file by file with 0 mismatches, copied after a scan that found the test SQL password in no file. Manifest SHA-256: `ED221C4ABBC5A548466729C6F0243D11D92088C7A63D3B5E24F7F97ED429700E`. It holds `cli-logs` (the final validation: `final/status.json`, the TRX files and logs; the focused SQL filter; both mutation runs with their mutant lists and the harness; the development runs), `honesty` (the report and the run log) and `prereview` (the review workflow's result).
 * **Bundle:** `G:\Backup\Apperture-Core-git-bundles-integration\feat-iam10-2b-wp4bc-cli-<head>.bundle`, the branch at its final commit, with its SHA-256 in `SHA256SUMS-2026-11-09-cli.txt` in that folder and in the hand-over message (a commit cannot name the hash of the bundle that contains it). It carries no `HEAD`: clone it with `git clone -b feat/iam10-2b-wp4bc-cli`.
 * **Working copy:** `artifacts/cli-logs`, the builds in `artifacts/cli-dev`, `artifacts/cli-release` and `artifacts/cli-mut`, and the clean clone in `artifacts/cli-honesty`. Nothing was cleaned up. Nothing was pushed.
+
+The archive and bundle above are those of the checkpoint `d8fce9cf`. The remediation of section 13 has its own archive and bundle, named there; the first is preserved unchanged.
+
+## 13. Review remediation (R-1 and R-2)
+
+The Sonnet review of `d8fce9cf` returned **ACCEPT WITH BOUNDED REMEDIATION**: the production behaviour was found correct, three deliberate defects escaped the existing tests (R-1) and a failure before the command starts left the documented status range (R-2). This is not the final independent acceptance: that review (Opus) is still pending and is not replaced by the Sonnet one. The reviewer's evidence (`G:\Backup\Apperture-Core-worktree-evidence\2026-11-09\review-wp4bc-cli-d8fce9c`) is untouched.
+
+### 13.1 R-1: three mutation escapes (tests only; `src` stays `1802100fdb2e460dcd7b5f91162a96e8ba812638` at `db187a92`)
+
+| Mutant | What it did | Added control (all in `UnitTests`) | Failing cases under the mutant |
+|---|---|---|---|
+| A1 | the first enrolment's wrong code throws a plain `InvalidOperationException` again (typed exception reverted at that site) | `NativeMfaServiceTests.CodeNotValid`: exact-type assertion at the first enrolment (`ThrowExactlyAsync<NativeMfaCodeNotValidException>`, message `The authenticator code is not valid.`, still an `InvalidOperationException` for existing callers, nothing enrolled, nothing staged), and the enrol command over the real service: wrong code is status 2, no code or key echoed beyond the one display, nothing enrolled, no recovery code created | 2 |
+| A2 | the same at the replacement's verification (the reviewer's own, caught before only by SQL) | the same class, exact-type assertion at `VerifyReplacementAsync`, independent of SQL | 1 |
+| A3 | the runner's outer cancellation handler reports success | `enroll-mfa` cancelled at the code prompt: status 1 (the documented status of a cancelled command; no new scheme), a cancellation line, no success text, `CompleteEnrollmentAsync` never called | 1 |
+| A4 | the blank-entry guard on a returned code set is removed | `regenerate-codes` returning a set with a blank entry (three forms: spaces, empty, tab): status 5 (not fully confirmed), the usable-looking entry and the "store these" instruction are not shown, the next step is named | 3 |
+
+The mutation harness is the one of section 10 (one exact single-occurrence replacement on the committed tree, build, run `UnitTests.Cli` plus `NativeMfa`, restore with `git checkout`). All four failed with assertion failures (not build or setup failures), the unmodified tree passed 180/180 at the time (171 before the process cases of R-2), and the three files were byte-identical (SHA-256) and the tree clean afterwards. The reviewer's four probes were adapted, not copied: the two typed-exception probes and the two CLI probes became the committed cases above with the same assertions, plus the real-service enrol case that the brief asked for.
+
+### 13.2 R-2: the failure before the command starts (production change)
+
+*Finding.* `Program.cs` built the configuration and the bootstrap container before it dispatched. A malformed `appsettings.json` ended the process with an unhandled exception (exit `-532462766`), outside the 0 to 6 range.
+
+*Correction (`ac773600`; `Program.cs` and `EmergencyCli.cs` only).* `emergency` is dispatched before the configuration and the bootstrap container are built (it uses neither: `EmergencyCli` builds its own container). The command line takes the configuration and the environment name as functions and calls them after usage is settled, inside the command's setup `try`; a failure goes through `EmergencyOutcomeMapper` (the same path as a failed container build): status **6**, the type names only (`InvalidDataException <- FormatException <- JsonReaderException`), the next step, no message, path or configured value, no stack trace. The existing five-argument `RunAsync` overload is kept (it wraps its arguments), so every earlier caller and test is unchanged. `bootstrap`, help and unknown commands are exactly as before.
+
+*Intentional behaviour changes.* (1) Help and usage errors of `emergency` no longer read the settings file at all, so they work when the file is broken (they used to crash with it). (2) `emergency` no longer resolves the unused bootstrap service before dispatch, so a failure in that registration no longer ends an emergency command with a plain `Error:` line and status 1. Neither changes a successful run.
+
+*Not changed.* The same malformed file still crashes `bootstrap` and the bare overview. The documented 0 to 6 contract is the emergency command's; the bootstrap commands have their own and are out of scope (carried to the pre-release gate below).
+
+*Controls.* `EmergencyCliProcessTests` (9 cases, `7a35d6c5` names the executable per operating system): a copy of the built executable and its dependency-file assemblies in a disposable directory, a truncated settings file with a value that must not be echoed, and no database named by the environment. For each of `status`, `provision`, `enroll-mfa`, `reset-mfa`, `reset-mfa --bare-reset`, `regenerate-codes` and `revoke`: status 6, empty standard output, an `Error:` line with the type names and a next step, no `Unhandled exception`, no stack frame, no configured value and no file name anywhere. With the same broken file `reset-mfa --help` is 0 and a typo is 2. A well-formed file (`{}`) starts normally (help 0, overview 0, both account options 2). Mutants **caught**: R2a (configuration loaded eagerly outside the map: the original crash; 8 cases), R2b (a setup failure rethrown; 8), R2c (the exception message printed instead of the map's text; 8), R2d (the configuration read before dispatch; 8).
+
+The real built executable (`artifacts/cli-release/bin/Apperture.Cli.Host/release`) was also run by hand with a malformed file beside it: `status`, `reset-mfa --user-id`, `reset-mfa --bare-reset --user-id` all exit 6 with the safe message; `reset-mfa --help` exits 0; `--bare-rest` exits 2 (`rev-logs`-style transcript: `artifacts/cli-logs/rem/real-exe-r2.txt`). The scratch settings file was removed.
+
+*Test-environment note.* The test project's output has the Microsoft.Extensions assemblies from the ASP.NET Core shared framework, whereas the shipped executable carries them beside it; the test's disposable copy therefore declares that framework in its own runtime configuration. The code under test is the same executable. The hand run above used the shipped layout.
+
+### 13.3 Validation of the remediation (at `7a35d6c5`; `src` `c83ce3ca579b0dfb086836cfdff46369322e261c`, `tests` `aa7b74e78e36d670a570929fad5a3a44b6ce99e0`, SDK 10.0.402, `src` and `tests` equal HEAD)
+
+| Step | Result |
+|---|---|
+| Clean build (protocol flags, `Apperture.slnx`, Release) | 0 errors, 73 warnings (the accepted baseline), 415 s |
+| UnitTests | **6380 passed**, 0 failed, 1 skipped by design (the opt-in desktop timing diagnostic). Before the remediation 6364: the difference, +16, is the remediation's cases (7 for R-1, 9 for R-2) |
+| ArchTests / Ui.Shared / Ui.Client / AppHost.Diagnostics | 38/38, 1497/1497, 532/532, 7/7 |
+| Focused real SQL (Release, both isolation modes) | **112/112**, 56 per mode: `EmergencyCliSqlServerTests` (44), `PendingMfaEnrollmentSqlServerTests`, `ConditionalMfaEnrollmentSqlServerTests`, `NativeMfaServiceViabilitySqlServerTests`. Deliberately not the full 1455-case set: no service, persistence or CLI runner code changed, and the entry-point change is exercised by the three production-container runs in the CLI class. The test SQL password appears in no output |
+| SQL honesty | **PASS, authoritative**, unchanged script and lists, clean clone at `7a35d6c5`, mode `enforce`: discovered and executed 3914, passed 227, failed 3687. `git diff --name-only ffe92b72 7a35d6c5 -- scripts .github tests/test-manifest.json tests/Apperture.IntegrationTests/SqlExecutionHonesty` is empty |
+| Not run | the full 1455-case focused set and the full `IntegrationTests` assembly against real SQL; BrowserTests, EndToEndTests; Linux and hosted CI (the CI runner is `ubuntu-24.04`: the process cases name the apphost per operating system and rely on `DOTNET_ROOT` or the default install location, unverified); the interactive Windows smoke below |
+
+A four-agent read-only review of the remediation diff (tests, production change, process test; each finding put to a skeptic) produced one candidate, a hardening suggestion that was refuted as not a defect in the change: the process cases rely on the broken settings file being the cause of the failure (not on an empty bootstrap store); they assert status 6, empty output and the type names, so a regression that made the file tolerated would fail them rather than touch a database. Recorded here as a possible later hardening (point the child at an empty bootstrap store).
+
+### 13.4 Remaining before release
+
+* The final independent (Opus) acceptance of the command line is still required; the Sonnet review did not replace it.
+* The interactive Windows smoke is still the owner's: an interactive console with the real DPAPI protector and a running Management Host (prompt text, three attempts, `Ctrl+C`, signing in with a replaced authenticator). The real-process evidence of the earlier review and of this remediation is non-interactive.
+* Pre-release gate: the same unhandled exit for a malformed settings file in `bootstrap` and the bare overview (not an emergency command); Linux and hosted CI of the new process cases.
+* The "Next:" line for a setup failure is the mapper's generic one ("run `emergency status` before repeating it"), which is not useful when the settings file is what failed; cosmetic, unchanged.
+* WP5, SI-1 and the test SQL container's exposure on `0.0.0.0:1433` are unchanged and out of scope.
+
+### 13.5 Evidence of the remediation
+
+`artifacts/cli-logs/rem` (the mutant lists `mutants-r1.json` and `mutants-r2.json`, both mutation runs with logs, hashes and restore checks, the final validation `final/status.json`, TRX files and logs, the honesty report and log, the hand run of the executable), archived on `G:` with a checksummed manifest and a recovery bundle whose names and hashes are in the hand-over message and `SHA256SUMS-2026-11-10-cli-remediation.txt` beside the bundle (a commit cannot name the hash of the bundle that contains it).
