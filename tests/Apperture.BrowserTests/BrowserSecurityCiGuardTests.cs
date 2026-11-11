@@ -129,6 +129,7 @@ public sealed class BrowserSecurityCiGuardTests
         suite.Should().Contain("dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj");
         suite.Should().Contain("--no-build");
         suite.Should().Contain("trx;LogFileName=browser-security.trx");
+        suite.Should().Contain("HOME: /root", "Firefox cannot launch as root when GitHub's container HOME (/github/home) belongs to the runner user");
         suite.Should().NotContain("--filter", "the required job runs every browser test");
         suite.Should().NotContain("continue-on-error");
         suite.Should().NotContain("||");

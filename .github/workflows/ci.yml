@@ -156,6 +156,9 @@ jobs:
 
       - name: Browser security suite
         env:
+          # Firefox refuses to start when $HOME is not owned by the user running it. In a container job GitHub sets
+          # HOME=/github/home, a mount owned by the runner user (pwuser in this image), while the steps run as root.
+          HOME: /root
           APPERTURE_TEST_SQL_CONNECTION_STRING: ${{ format('Server=sqlserver,1433;User Id=sa;Password={0};TrustServerCertificate=True;Initial Catalog=Apperture;', env.APPERTURE_CI_MSSQL_SA_PASSWORD) }}
         run: >
           dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj

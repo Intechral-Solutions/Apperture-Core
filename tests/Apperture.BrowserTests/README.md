@@ -46,6 +46,9 @@ stalled it until the job limit). Rules that keep this safe, all enforced by `Bro
 - The image tag must equal the Microsoft.Playwright version in `Directory.Packages.props`. When you upgrade that package,
   change the tag in `.github/workflows/ci.yml` in the same commit; the guard fails the ordinary `dotnet test` otherwise.
 - The container takes no options (no privileges, host namespaces or mounts).
+- The suite step sets `HOME=/root`. GitHub starts a container job with `HOME=/github/home`, a mount owned by the runner
+  user (`pwuser` in the image), while the steps run as root; Firefox refuses to start in that state ("unable to launch if
+  the $HOME folder isn't owned by the current user") and every Firefox test fails. A root-owned `HOME` lets it start.
 - The SQL Server is the job's own service container. In a container job it is reached by its service name on the job
   network (`Server=sqlserver,1433`), not on `127.0.0.1`, and publishes no port. The harness still applies
   `SqlTestTargetGuard` to that connection string (a disposable test server, never the development port, only its own
