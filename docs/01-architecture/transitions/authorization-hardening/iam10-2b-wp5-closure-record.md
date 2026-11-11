@@ -4,8 +4,8 @@
 |---|---|
 | Package | IAM-10.2b, work package 5 ([WP0 reconciliation](iam10-2b-wp0-reconciliation.md) §10): the full pair matrix on both isolation modes, the guard enforced for every writer, mutation checks and this closure record, over the integrated implementation (WP1 to WP4B). |
 | Branch | `feat/iam10-2b-wp5`, linked worktree `F:\Code\Apperture\wt-iam10-2b-wp5`, from the accepted IAM head `1c8067cd5ae11fc29285d21853a18c32d52beac1` (root tree `06c88a1d`, `src` `c83ce3ca`, `tests` `aa7b74e7`). **Local only**: not pushed, no pull request. The protected `feat/iam-10.2b-administrator-viability` is unchanged at `1c8067cd`. |
-| Code head | `acf928418a8c4e59de3e5c115d33ae9d4d088080` (root tree `f7e72a9a`, `src` `19d6c1b1d962136292799863a8a710afe955b593`, `tests` `138b07b2ac00832e792301205417af5dbb898709`). The documentation commit that carries this record and the review brief follows it and changes neither tree. |
-| Status | Implemented and validated (§9). **Not independently reviewed**; the brief is [iam10-2b-wp5-review-brief.md](iam10-2b-wp5-review-brief.md). Binding for the owner: the D-C and D-D ruling (§10.1). Made here for the owner to confirm or overrule: SI-1, the A10.2b.12 presentation and the set-password mapping of review C4 (§10.4). |
+| Code head | `acf928418a8c4e59de3e5c115d33ae9d4d088080` (root tree `f7e72a9a`, `src` `19d6c1b1d962136292799863a8a710afe955b593`, `tests` `138b07b2ac00832e792301205417af5dbb898709`). The documentation commits that carry this record, the review brief and the owner's rulings follow it and change neither tree. |
+| Status | Implemented and validated (§9). **Not independently reviewed**; the brief is [iam10-2b-wp5-review-brief.md](iam10-2b-wp5-review-brief.md). The owner's rulings of 2026-11-10 are recorded in §10.1.1 to §10.4: D-C and D-D Option A for RC1; no change to refusal rows; the constructor clean-up deferred, **contingent on the independent review confirming** that the production host cannot silently bypass MFA; the three production changes retained, subject to that review. Three wording points in the rulings are reported for the owner, not reinterpreted (§10.1.1). |
 | Not in scope | IAM-10.3, IAM-10.4 (how the UI presents a refusal or a deferral), IAM-10.5, IAM-11, OPS-1 servicing, development-environment work, refactoring of accepted code, the constructor clean-up of §7 (deferred), any new audit action, log requirement, counter or throttle (§10). |
 
 ## 1. The WP5 contract, reconciled
@@ -20,7 +20,7 @@ WP0 defines WP5 as "the full pair matrix on both isolation modes; the guard enfo
 | WP2 review §5, WP3 §7 | Optional reason enhancement for refusal rows ("left for WP5 consideration; no owner decision is needed now") | §10.2: considered, not implemented, offered to the owner |
 | WP4A §7 | D-A: the policy against activation and switch | §3, new cases (`DA_*`) |
 | WP4A §7 | D-B: the policy twice for one user | §3, new cases (`DB_*`) |
-| WP4A §7 | D-C, D-D: measure, then an owner ruling before this record | §4 measured; §10.1 the ruling, **open** |
+| WP4A §7 | D-C, D-D: measure, then an owner ruling before this record | §4 measured; §10.1.1 the owner's ruling, recorded 2026-11-10 |
 | WP4A §7 | D-E: presentation of multiple Entra links; "WP5 records that enforcement does not use the presentation" | §6, item 9: recorded as a known limitation until IAM-10.4 |
 | DEV-1 integration record §11 | The above, restated | as above |
 | Services record §15.7, CLI record §1 | SI-1: a busy gate on the administrators' set-password action returns 500 | §5.2: a deviation from A10.2b.15, closed |
@@ -289,7 +289,7 @@ Today this cannot happen, because the registration is unconditional (the table a
 - Production composition is demonstrably safe, and **no authentication bypass is reachable**.
 - No production change was made.
 - The hazard of a dropped registration now has a regression test that fails on the sign-in itself (§5.9).
-- The constructor clean-up (required parameters, and removal of the test-compatibility defaults in both controllers) is **deferred** to a separate hygiene change (§10.3), as the brief directs.
+- The constructor clean-up (required parameters, and removal of the test-compatibility defaults in both controllers) is **deferred** to a separate hygiene change (§10.3), as the brief directs. The owner's deferral is contingent on the independent review confirming that the production host cannot silently bypass MFA (§10.3, ruling).
 
 ## 8. Negative controls and mutation results
 
@@ -428,7 +428,7 @@ Today this cannot happen, because the registration is unconditional (the table a
 
 ## 10. Owner decisions
 
-Nothing below was implemented. WP5 adds no audit action, log line, counter, rate limit or policy.
+Nothing below was implemented. WP5 adds no audit action, log line, counter, rate limit or policy. The owner ruled on each item on 2026-11-10, after the hand-over at `7d3bf808`; each ruling is quoted as given and set against the option or recommendation it decides. Recording them changed no code and no test, and needed no new validation.
 
 ### 10.1 D-C and D-D (binding: a ruling before this record is final)
 
@@ -444,9 +444,35 @@ The deferral text requires "a measurement and a ruling before the WP5 closure re
 
 **Recommendation.** A for RC1 (the accepted rulings stand: no durable event for busy or unavailable), with **B** as a small post-RC1 observability change, and E considered only if the 15 s hold is judged a real user problem. Record the ruling in this section; this record is complete once it is recorded.
 
+#### 10.1.1 The ruling (owner, 2026-11-10)
+
+> **D-C:** Approve Option A for RC1. Retain the measured gate-contention behavior. No additional contention mechanism or speculative throttling is authorized.
+>
+> **D-D:** Approve Option A for RC1. Retain the existing operational warning without introducing a new durable contention audit event. Option B, an operational counter, is a post-RC1 enhancement candidate, not an RC1 requirement.
+
+**What it decides, against the options above and the deferral text** (WP4A record §7: D-C "decide whether the warning needs a rate limit or a counter"; D-D "it leaves no audit row … the only record is a warning per sign-in").
+
+| Option | Disposition for RC1 | After RC1 |
+|---|---|---|
+| A, keep the behaviour as measured | **Adopted** for D-C and for D-D. One warning per affected sign-in, no audit row, the policy repeating at each sign-in until it applies or the configuration is established, and a busy gate holding an affected sign-in for up to its 15 s bound (§4) | — |
+| B, a counter | Not adopted for RC1 | A post-RC1 enhancement candidate, as the ruling states it under D-D (see point 1 below) |
+| C, rate-limit the warning | Not adopted ("no … speculative throttling is authorized") | Not ruled on |
+| D, a durable attempt action with a reason | Not adopted: Option A writes no row for either outcome | Not ruled on |
+| E, shorten the policy's wait for the gate | Not adopted: retaining the measured behaviour keeps the 15 s bound | Not ruled on |
+
+The tension the DEV-1 integration record (§6) asked the ruling to settle, between WP4A §5 (its audit questions "remain the owner's") and WP4A §7 ("the earlier rulings stand: a busy gate and an unavailable configuration do not need a new durable audit event"), is settled **for RC1** in the direction of §7. The ruling does not decide a durable event after RC1.
+
+**Reported, not reinterpreted.** Three points of wording differ from the option definitions. None changes what RC1 does, which follows from Option A's definition; each is left for the owner to confirm or correct.
+
+1. **Which outcome the counter candidate covers.** The ruling names Option B only under D-D. Option B above covers both outcomes (`NotAppliedBusy`, which is D-C's, and `DeferredAdministratorViabilityUnavailable`, which is D-D's), and the deferral text makes the counter a D-C question. It is recorded as given: a post-RC1 candidate stated for D-D; for D-C's busy outcome the ruling says nothing about a counter after RC1.
+2. **"Contention" under D-D.** The D-D ruling refers to "a new durable contention audit event". D-D is the unavailable-configuration outcome, not gate contention. Option A's definition (no row) governs either way, so no durable event is added for the unavailable configuration or for a busy gate.
+3. **The MFA contingency of §10.3.** It is recorded as an independent confirmation that the production host **as composed at the reviewed commit** cannot silently bypass MFA, which is what the evidence of §7 can establish and what the brief asks (question 9). It cannot establish that a later change will never drop the registration. The deferred clean-up gives that structural guarantee, and until then the sign-in test of §5.9 guards it. If the owner meant the structural reading, the clean-up cannot be deferred on this evidence.
+
 ### 10.2 The optional reason on refusal rows
 
 Left for WP5 consideration by the WP2 review ("no owner decision is needed now"), with the related WP4A §5 ambiguities 1 (one attempt row for two invariants) and 3. The refusal rows (`auth_admin.blocked.*`, `entra.tenant_registration.change_refused`, the policy's attempt row) do not say which invariant decided; the stable code is in the API response and the command line's output, and `emergency.auth.blocked.administrator_viability` already carries the code and the evidence class. **Recommendation:** no change in IAM-10.2b; if wanted, one additive `reason` detail through a separate audit-catalog change, ideally alongside the IAM-10.4 presentation of refusals.
+
+**Ruling (owner, 2026-11-10).** "Preserve existing reason and evidence semantics. No expansion authorized." This matches the recommendation's first part: no change in IAM-10.2b, and the existing code and evidence class of `emergency.auth.blocked.administrator_viability` stay as they are. The recommendation's conditional second part (an additive `reason` detail through a separate audit-catalog change) is not authorized by this ruling and would need its own decision.
 
 ### 10.3 Constructor clean-up (§7)
 
@@ -456,6 +482,8 @@ Make `INativeMfaService` and `IPendingMfaLoginTicketService` required in `AuthCo
 
 **Recommendation:** a small hygiene change after IAM-10.2b merges. It is not a security fix, because production composition is safe today and the regression test is in place.
 
+**Ruling (owner, 2026-11-10).** "Defer cleanup, contingent on independent confirmation that the production host cannot silently bypass MFA." The deferral matches the recommendation. Its condition is open until the independent review answers question 9 of the brief, which now asks for that confirmation explicitly. If the review does not confirm it, the condition fails and the clean-up returns to the owner. For how the condition is read, see §10.1.1, point 3.
+
 ### 10.4 Changes made here, for the owner to confirm or overrule
 
 | Change | Why it was made in WP5 | To undo |
@@ -463,6 +491,8 @@ Make `INativeMfaService` and `IPendingMfaLoginTicketService` required in `AuthCo
 | SI-1 (`07fe0b54`, §5.2) | Deferred as informational by the services review; A10.2b.15 and P-10 specify the busy outcome for every gate-taking writer, set-password became one in WP4B-C (L-P3), and the change is the established mapping of its sibling endpoints | revert `07fe0b54` |
 | The A10.2b.12 presentation (`79e96109`, §5.5) | A binding clause of an owner ruling (C-14) that no package implemented; the wording is new operator-facing text | revert `79e96109` (and record the clause as open) |
 | Review C4 (`276584f7`, §5.6) | P-37's contract on the route SI-1 brought under 10.2b; the neighbouring endpoint's established filter | revert `276584f7` |
+
+**Ruling (owner, 2026-11-10).** "Retain the three corrections from `07fe0b54`, `79e96109` and `276584f7`, subject to independent security review." All three stay in the tree as validated at `acf92841`. Each is still subject to the review (brief questions 5 and 8), and a finding against one returns it to the owner.
 
 ### 10.5 Carried, not WP5 decisions
 
@@ -504,8 +534,8 @@ These are release and operations checks, not part of WP5's contract; none blocks
     - `probes/`: the eighteen probe files (`guard/`) and every probe run, the last at `acf92841` (`final-acf92841/`).
     - `tools/`: the harness and the mutant definitions (§8), the catch reader and the M01 grouping, the validation, archive and bundle scripts, and the TRX summarisers.
     - `base/`, `dev/`, `dev-unit/`, `closure/`, `m07-test/`: the baseline at `1c8067cd` and the development runs behind §3 to §5.
-- **Bundle:** `G:\Backup\Apperture-Core-git-bundles-integration\feat-iam10-2b-wp5-<head>.bundle`, the branch at its final commit (the commit of this record).
-  - Its SHA-256 is in `SHA256SUMS-feat-iam10-2b-wp5.txt` in that folder and in the hand-over message, because a commit cannot name the hash of the bundle that contains it.
+- **Bundle:** `G:\Backup\Apperture-Core-git-bundles-integration\feat-iam10-2b-wp5-<head>.bundle`, the branch at its final commit (the commit that records the owner's rulings). The bundle of the first hand-over, `feat-iam10-2b-wp5-7d3bf808.bundle`, stays beside it unchanged.
+  - Its SHA-256 is in `SHA256SUMS-feat-iam10-2b-wp5.txt` in that folder (one line per bundle) and in the hand-over message, because a commit cannot name the hash of the bundle that contains it.
   - It was verified with `git bundle verify`, then restored into a bare clone on a short path, where the head, the root, `src` and `tests` trees and `git fsck --full` were checked; the clone was then removed.
   - It carries no `HEAD`: clone it with `git clone -b feat/iam10-2b-wp5`.
 - **Working copy:**
