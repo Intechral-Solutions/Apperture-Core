@@ -5,7 +5,7 @@
 | Package | IAM-10.2b, work package 5 ([WP0 reconciliation](iam10-2b-wp0-reconciliation.md) §10): the full pair matrix on both isolation modes, the guard enforced for every writer, mutation checks and this closure record, over the integrated implementation (WP1 to WP4B). |
 | Branch | `feat/iam10-2b-wp5`, linked worktree `F:\Code\Apperture\wt-iam10-2b-wp5`, from the accepted IAM head `1c8067cd5ae11fc29285d21853a18c32d52beac1` (root tree `06c88a1d`, `src` `c83ce3ca`, `tests` `aa7b74e7`). **Local only**: not pushed, no pull request. The protected `feat/iam-10.2b-administrator-viability` is unchanged at `1c8067cd`. |
 | Code head | `acf928418a8c4e59de3e5c115d33ae9d4d088080` (root tree `f7e72a9a`, `src` `19d6c1b1d962136292799863a8a710afe955b593`, `tests` `138b07b2ac00832e792301205417af5dbb898709`). The documentation commits that carry this record, the review brief and the owner's rulings follow it and change neither tree. |
-| Status | Implemented and validated (§9). **Not independently reviewed**; the brief is [iam10-2b-wp5-review-brief.md](iam10-2b-wp5-review-brief.md). The owner's rulings of 2026-11-10 are recorded in §10.1.1 to §10.4: D-C and D-D Option A for RC1; no change to refusal rows; the constructor clean-up deferred, **contingent on the independent review confirming** that the production host cannot silently bypass MFA; the three production changes retained, subject to that review. Three wording points in the rulings are reported for the owner, not reinterpreted (§10.1.1). |
+| Status | Implemented and validated (§9). **Not independently reviewed**; the brief is [iam10-2b-wp5-review-brief.md](iam10-2b-wp5-review-brief.md). The owner's rulings of 2026-11-10 are recorded in §10.1.1 to §10.4: D-C and D-D Option A for RC1; no change to refusal rows; the constructor clean-up deferred, **contingent on the independent review confirming** that the production host cannot silently bypass MFA; the three production changes retained, subject to that review. Three wording points in the rulings are reported for the owner, not reinterpreted (§10.1.1). **Update, 2026-11-10:** the independent review accepted WP5 at `e2efd12a` with two Low findings; the follow-up package, a clarification of A10.2b.11 and the scope of the post-RC1 counter candidate are recorded in §13, and the text above is left as written. |
 | Not in scope | IAM-10.3, IAM-10.4 (how the UI presents a refusal or a deferral), IAM-10.5, IAM-11, OPS-1 servicing, development-environment work, refactoring of accepted code, the constructor clean-up of §7 (deferred), any new audit action, log requirement, counter or throttle (§10). |
 
 ## 1. The WP5 contract, reconciled
@@ -54,7 +54,7 @@ Every test named here ran on the integrated tree in the full assembly run of §9
 | A10.2b.8 | `…Wp2…A8_*` (one Entra-independent administrator: credential, Local link, role); "with two, the first allowed and the second refused" for all three reductions: the sequential twins of `F1_*` | WP2, WP3, **WP5** | met |
 | A10.2b.9 | `F1_*` (person × person under I-FALLBACK), `…A9_*` (the policy for two administrators), `DB_*` (the policy twice for one), `F2_*` (designation as a reduction) | WP4A, **WP5** | met |
 | A10.2b.10 | `Healthy_recovery_access_satisfies_I_FALLBACK_…` (one administrator); **every administrator**: `A10_with_healthy_recovery_access_the_policy_disables_…_including_the_last` and `A10_with_recovery_access_not_healthy_…_defers_that_one` | WP4A, **WP5** | met |
-| A10.2b.11 | The WP4B-C refusals (C-13-R, the missing flag first, one W3 row, the command line's exit and message); races with every EI reduction: `F3_*`, `F4_*`, `F5_*`, and the Recovery Access writers against each other `F7_*` | WP4B-C, **WP5** | met |
+| A10.2b.11 | The WP4B-C refusals (C-13-R, the missing flag first, one W3 row, the command line's exit and message); races with every EI reduction: `F3_*`, `F4_*`, `F5_*`, and the Recovery Access writers against each other `F7_*`. What the host does for the designated account's credential and role changes is clarified in §13.1 | WP4B-C, **WP5** | met |
 | A10.2b.12 | Never blocked, no gate, the existing row: `F8_*`, `A12_*`; **the presentation says the codes are exhausted and names the remedy** (a defect, fixed in §5.5): `EmergencyCommandRunnerTests.The_status_says_the_recovery_codes_are_exhausted_…` (U), `AuthOverviewRecoveryCodesRenderTests` (UI); **regeneration in that state restores health, and I-FALLBACK governs before and after**: `A12_the_last_recovery_code_is_used_without_the_gate_…` (the status and the regeneration through the command line's production container) | **WP5** | met (defect fixed) |
 | A10.2b.13 | `F9_*` (a host writer, the policy at a real Entra sign-in, and the command line's production container on its own connection serialize on the one gate, whichever holds it); `A13_*` (a writer that takes only row locks never waits for the gate); disjoint lock sets: §3.3 | WP2, WP3, **WP5** | met |
 | A10.2b.14 | `AdministratorViabilityWriterCoverageGuardTests` (G), hardened twice in WP5 with 18 probe shapes (§5.1, §5.7); `A14_*` (the gate is the first lock after the operation lock, before any authority row lock or write); `No_production_code_uses_snapshot_transaction_isolation` (G) | WP1 to WP4B, **WP5** | met |
@@ -203,6 +203,8 @@ The pre-hand-over review found writes of viability inputs the hardened guard sti
 | C1 (Medium) | The persistence layer and the migrations were outside the guard: a new store contract and its implementation, a concrete-only write method on a store, or a data migration could write a viability table unseen | Every persistence file that touches a viability table is classified (stores, the facts reader, the model and entities, the audit actor evidence reader, `UsernameBackfill` as a justified exception); the store and reader files' declared types are pinned; a store implementation may expose nothing beyond its classified contracts and implement no further application contract; the migrations that change rows of a viability table are enumerated with their reasons (the default sign-in policy seed, the credential-id backfill) |
 
 **Probes.** Nine more probe files, P09 to P17 (P09 a registration delete through a `var`-resolved store; P10 an inline-resolved recovery-code store; P11 a null-conditional receiver; P12 a factory context removing roles; P13 the designation cleared on a tracked users read; P14 SQL with an alias; P15 a new persistence store that disables credentials, placed in the persistence project; P16 a data migration that disables credentials, placed in `Migrations`; P17 SQL with a lower-case table). At `acf92841` (as at `3ddea2bf`) **all eighteen probes (P00 to P17) are detected**, each failure naming the probe file, and `src` is clean after each. The review established the escape of the C1 to C3 shapes by analysis; P09 to P17 were not re-run against the earlier guard. A concrete-only method and a new type in a store file need a rebuild, so they are controls M23 and M24 (§8).
+
+**Added residual, found by the independent review and closed on 2026-11-10 (§13.3).** A method-group reference to a protected write method (`Func<…> disable = credentials.SetDisabledAsync;`), with no call parenthesis, was not counted. It is counted now.
 
 **Residual (stated).** The guard is lexical. A writer reached through reflection or dynamic dispatch, a receiver that is a member of another object (`stores.Users.…`) or a lambda parameter typed by inference, and SQL assembled from fragments are not seen. The behavioural tests (the matrix, `U15_*`, `U17_*`) and the switch's run-time precondition (SR-1) remain the backstop.
 
@@ -464,7 +466,7 @@ The tension the DEV-1 integration record (§6) asked the ruling to settle, betwe
 
 **Reported, not reinterpreted.** Three points of wording differ from the option definitions. None changes what RC1 does, which follows from Option A's definition; each is left for the owner to confirm or correct.
 
-1. **Which outcome the counter candidate covers.** The ruling names Option B only under D-D. Option B above covers both outcomes (`NotAppliedBusy`, which is D-C's, and `DeferredAdministratorViabilityUnavailable`, which is D-D's), and the deferral text makes the counter a D-C question. It is recorded as given: a post-RC1 candidate stated for D-D; for D-C's busy outcome the ruling says nothing about a counter after RC1.
+1. **Which outcome the counter candidate covers.** The ruling names Option B only under D-D. Option B above covers both outcomes (`NotAppliedBusy`, which is D-C's, and `DeferredAdministratorViabilityUnavailable`, which is D-D's), and the deferral text makes the counter a D-C question. It is recorded as given: a post-RC1 candidate stated for D-D; for D-C's busy outcome the ruling says nothing about a counter after RC1. **Settled on 2026-11-10 (§13.2):** the candidate applies to both outcomes.
 2. **"Contention" under D-D.** The D-D ruling refers to "a new durable contention audit event". D-D is the unavailable-configuration outcome, not gate contention. Option A's definition (no row) governs either way, so no durable event is added for the unavailable configuration or for a busy gate.
 3. **The MFA contingency of §10.3.** It is recorded as an independent confirmation that the production host **as composed at the reviewed commit** cannot silently bypass MFA, which is what the evidence of §7 can establish and what the brief asks (question 9). It cannot establish that a later change will never drop the registration. The deferred clean-up gives that structural guarantee, and until then the sign-in test of §5.9 guards it. If the owner meant the structural reading, the clean-up cannot be deferred on this evidence.
 
@@ -547,3 +549,98 @@ These are release and operations checks, not part of WP5's contract; none blocks
 
   Nothing was cleaned up.
 - **Unchanged:** nothing was pushed and no pull request was opened. The IAM branch is unchanged at `1c8067cd`, and every earlier archive and bundle is untouched.
+
+## 13. Post-review hardening and corrections (2026-11-10)
+
+The independent review (its record is kept outside the repository, at `F:\Code\Apperture\reviews\wp5\evidence\REVIEW-RECORD.md`) accepted WP5 at `e2efd12a28eebf0c663ae8eb88c1be63787f584d` with two Low findings, L-1 and L-2, and the owner advanced the protected IAM branch to that commit. This section records the follow-up package: both findings, two small clarifications and the evidence. Sections 1 to 12, the review's findings and the owner's rulings are not rewritten; four sentences elsewhere point here (the status row, the A10.2b.11 row of §2, the residual of §5.7 and point 1 of §10.1.1).
+
+| | |
+|---|---|
+| Branch and worktree | `feat/iam10-2b-post-wp5-hardening`, linked worktree `F:\Code\Apperture\wt-iam10-2b-hardening`, from `e2efd12a`. **Local only**: not pushed, no pull request. The protected `feat/iam-10.2b-administrator-viability` and `master` are unchanged |
+| L-1 | `7e7e4a7e`, test-only (`src` tree `19d6c1b1`, equal to the accepted tree) |
+| L-2 | `5d0f3d41` (root `be8109d8`, `src` `f04b73fe`, `tests` `eca96520`): three production files, the test doubles that implemented the removed members, the guards, and one line of `authorization-and-governance-foundation.md` (18 files; 3 under `src`, 14 under `tests`, 1 document) |
+| Documentation | this section and the four pointers; the commit after `5d0f3d41`, which changes no file under `src` or `tests` |
+| Outcome | L-1 **closed**. L-2 **closed by removal**. No remaining issue needs an owner decision to close either finding |
+
+### 13.1 A10.2b.11: what the host does for the designated account's credential and role
+
+The design gate's A10.2b.11 lists "reset of MFA, a change to the designated account's credential or role" among the covered Recovery Access mutations that are refused with `EI = 0` and allowed with `EI ≥ 1`. That reads as if all of them depend on the viability evidence. They do not, and what WP5 verified is this:
+
+- **The designated Recovery Access account's credential and role changes are refused by the host, whatever `EI` is.** Through ordinary user administration the host refuses, with `emergency.access.unsafe_operation`, an assignment or removal of a role, the disabling of its Local credential, the setting of its password and the addition of an identity link. This is the system-managed restriction that the design gate carries forward unchanged (P-35). The refusal comes after the gate is taken (where the writer takes it) and before any viability state is captured and before any write, so it never reaches the viability decision. Role removal and credential disablement also write the audited refusal row `emergency.auth.blocked.unsafe_operation` (`role.remove`, `credential.disable`; the actor is the person who tried).
+- **The viability-conditioned Recovery Access mutations are the bare MFA reset, the authenticator replacement and the strict revocation**, the ones the matrix pairs against every Entra-independent reduction (`F3_*`, `F4_*`, `F5_*`, §3). These are refused when the result would leave no viable Entra-independent ordinary administrator and allowed when one remains.
+
+Evidence, all re-run in §13.5: the refusal order in `UserManagementService` (assignment, removal and credential disablement); `UserManagementServiceCreateUserTests.Ordinary_user_management_cannot_mutate_recovery_access` (set-password, credential disable, role assign, role remove and link add on the designated account each refused with the code, nothing changed); `RoleAuthorityEnforcementTests.Authorization_comes_before_the_system_managed_target_refusal`; and `IdentityGovernanceAuditSqlServerTests.A_change_refused_to_protect_Recovery_Access_records_who_attempted_it_not_the_protected_account` (role removal on a real database, with the audit row). A10.2b.11 stays **met**. This is a clarification of the verified behaviour: no code, test, ruling or the design gate's text changed.
+
+### 13.2 The post-RC1 operational counter covers both outcomes
+
+Owner direction of 2026-11-10: the potential post-RC1 operational counter (Option B of §4 and §10.1.1) applies to both outcomes, **D-C** (gate contention, `NotAppliedBusy`) and **D-D** (configuration unavailable, `DeferredAdministratorViabilityUnavailable`). It is recorded as a candidate only. Nothing is implemented or committed to, it is not an RC1 requirement, and it adds no durable event; Option A stays what RC1 does for both outcomes (§10.1.1). This settles the first of the three reported wording points of §10.1.1; the other two are unchanged.
+
+### 13.3 L-1: the writer guard and method-group references (closed)
+
+**Finding.** A method-group reference to a protected write method (`Func<…> disable = credentials.SetDisabledAsync;`) escaped the guard because every call rule required the member name to be followed by `(`: reviewer probe PR2 passed the whole guard class.
+
+**Change (`7e7e4a7e`, test-only).** A write is now counted wherever its member name is used on a receiver its rule recognises, invoked or not. The name ends at a word boundary, so a longer identifier that merely begins with it is not a reference. The change covers every call-counted rule of the viability guard (the receiver-by-type rule for declared, `var`-resolved and inline-resolved receivers, and the member-name rules), the role guard's assignment and permission-JSON rules, and three secondary facts of the viability guard (the single caller of the designation setter, the generic-update count of the account services and the discovery of stale writers). The production inventories are unchanged: no method group exists in `src`.
+
+**Evidence** (`dev/` of §13.6):
+
+| Check | Result |
+|---|---|
+| New behavioural facts against the previous rules (red) | Both fail: the viability fact on the reviewer's PR2 text, the role fact on `roles.AssignToUserAsync` |
+| The reviewer's PR2 probe, replayed from `F:\Code\Apperture\reviews\wp5\tools\probes\PR2-method-group.cs` into `src`, previous rules | **Escapes**: 64 of 64 guard facts pass (a clean control passes 64 of 64) |
+| The same probe, hardened rules | **Detected**: 1 of 64 fails, `Every_production_writer_of_a_viability_input_is_classified`, and the message names `WpFiveGuardProbe.cs`; the clean control passes 64 of 64; `src` clean after each run |
+| New facts, hardened rules | Pass. Together with the existing guard facts: 66 of 66 |
+| Per-rule controls: each of nine rules reverted alone to the parenthesis form, rebuilt, the new facts run | **9 of 9 caught**, each naming the row of its rule (seven viability rules and two role rules; the receiver-by-type rule is caught by the first failing row). The file is restored from git, proven identical to `HEAD`, rebuilt and green |
+| Not covered by their own control | The three secondary facts above: they were widened for consistency, and the primary inventory fact covers the designation setter |
+
+The new facts cover every call-counted write kind (26 rows in the viability guard, 5 in the role guard) through a typed receiver, a `var` resolved from a service provider, an inline-resolved store, a cast to a delegate type and a receiver of any name for the name-based rules, and check that a comment, a longer identifier and a method group of a service of the same name are not writers. **Residual (unchanged from §5.7):** the guard is lexical; a receiver that is a member of another object (`stores.Users.…`), a lambda parameter typed by inference, reflection and SQL assembled from fragments are not seen, and a method group in `nameof` is counted (conservative).
+
+### 13.4 L-2: the unused role-provider writers (closed by removal)
+
+**Finding.** `IRoleProvider.AssignRoleToUserAsync` and `RemoveRoleFromUserAsync` wrote `UserRoles` with no audited unit, no gate, no verification and no audit row, and were pinned against new callers by name only.
+
+**Independent verification that they are obsolete and safe to remove:**
+
+| Question | Finding |
+|---|---|
+| Production callers | None. The only members of `IRoleProvider` that `src` uses are `GetRolesAsync`, `GetRoleAsync` and `GetRolesForUserAsync` (the controllers, the authorization evaluator, the dashboard card provider and the authority resolver) |
+| Implementations | Two: `SqlRoleProvider` (forwarded to `IRoleRepository`) and `StubRoleProvider`; plus 12 test doubles (two integration, ten unit), each a no-op or a throw |
+| Dependency injection | One registration, `AddScoped<IRoleProvider, SqlRoleProvider>()`, which does not name the members |
+| Reflection and dynamic use | None: the names occur in no tracked file outside the removed declarations and the stubs (a search of every tracked file, source, tests and documents); `src` has no `GetMethod`, `InvokeMember` or proxy over the provider. The Moq doubles of `IRoleProvider` set up only reads |
+| Modules and the SDK | No module or SDK project names the provider; the module SDK's public-API snapshot tests cover `ModuleSdk.Integration` and `ModuleSdk.Testing` only |
+| Public API | `Apperture.Core.Application` is an internal platform assembly (`InternalsVisibleTo` for three assemblies); no pipeline publishes a package (`scripts/ci/pack.ps1` only packs on request and nothing invokes it); no API baseline covers it |
+| Other checkouts | The folders under `F:\Code\Apperture` that are not this repository (`Apperture-Enterprise` is empty, `Apperture.Persistence.SqlServer` holds one stray file, `poc`, `dev`) name neither member |
+| Compilation | The whole solution builds (0 errors) with the members removed, so no project, Razor component or test project consumed them |
+
+**Change (`5d0f3d41`).** Both members are removed from the contract, from `SqlRoleProvider` and `StubRoleProvider`, and from the 12 test doubles; the two `SqlRoleProvider` mechanism entries leave the role and viability guard inventories; one line of `authorization-and-governance-foundation.md` says the provider is read-only. Role assignments continue to change only through `UserManagementService`, `UserProvisioningService` and the classified bootstrap and recovery writers, each in its audited unit; no new mutation path was added.
+
+**The guard, structurally instead of by name.** `RoleWriterCoverageGuardTests.The_role_provider_offers_reads_only_and_no_production_code_names_the_removed_assign_and_remove` pins `IRoleProvider`, `SqlRoleProvider` and `StubRoleProvider` to exactly the three reads, and fails if any production file names either removed member in any form (a declaration, a call or a method group).
+
+**Negative controls.** Against the pin before the removal (red): it fails on the two extra members, and the inventory fact fails on the removed names in the two implementations. After the removal, two probes placed in `src` fail the guard and name the probe (an extension method that redeclares `AssignRoleToUserAsync`; a method-group reference to `RemoveRoleFromUserAsync`), while a clean control passes 65 of 65. Two rebuilt mutants, a new public `GrantAsync` on `SqlRoleProvider` and on `StubRoleProvider`, are each caught by the pin, which names `GrantAsync`; the restored tree is rebuilt and the class passes 16 of 16.
+
+### 13.5 Validation of the code commit `5d0f3d41`
+
+Release, SDK 10.0.402, from the worktree on 2026-11-10 (UTC 2026-11-11), clean tracked tree. Build: `dotnet build Apperture.slnx -c Release --no-incremental -m:1 -p:UseSharedCompilation=false --disable-build-servers --artifacts-path artifacts/h2`. Every suite ran with `dotnet test --no-build`.
+
+| Step | Result |
+|---|---|
+| Build | Exit 0, 0 errors, 73 warnings (as WP5's final build), 5 min |
+| `Apperture.UnitTests` | 6,396 results: 6,395 passed, 0 failed, 1 not executed (the opt-in `PasswordEvaluationDesktopTimingDiagnostics`, as in §9). WP5's run had 6,393: the difference is the three facts added here |
+| `Apperture.ArchTests` | 38 of 38 |
+| `Apperture.Management.Ui.Shared.Tests` | 1,497 of 1,497 |
+| `Apperture.Management.Ui.Client.Tests` | 536 of 536 |
+| `Apperture.AppHost.Diagnostics.Tests` | 7 of 7 |
+| **Focused `Apperture.IntegrationTests`** against the dedicated SQL container, required-SQL mode: the two classes whose test doubles changed (`AuthenticationAuditSqlServerTests`, `PasswordChangeDesignationSqlServerTests`) and the role writers and the host composition that registers `SqlRoleProvider` (`IdentityGovernanceAuditSqlServerTests`, `AdministratorViabilityWp2SqlServerTests`, `ManagementHostGovernanceHttpTests`) | **393 of 393 passed**, 0 skipped, 0 not executed (7 min). Counting the isolation mode anywhere in the name: 161 `rcsi: False` and 161 `rcsi: True`, none failed in either mode; 71 have no mode |
+| SQL execution proof (`Get-SqlEvidence.ps1`) | Write markers: total user updates 87,617 → 88,808 over the 24 `Apperture_*` catalogs; the persistent `Apperture_ManagementGovernanceTests` went 25,259 → 26,450, last write 07:20:51Z. Window 07:14:35Z to 07:22:38Z: **28** "Starting up database" entries (the disposable catalogs that SQL cases create), the first at 07:15:33Z and the last at 07:18:54Z. The password literal is in no output file (the same scan finds it in a control file). The window's first collection used local-time bounds by mistake and reported 0; it was collected again with UTC bounds and both files are kept |
+| SQL honesty (`Test-SqlExecutionHonesty.ps1 -Configuration Release`, a fresh clone at `5d0f3d41`, which has a `.git` directory; built by the script) | **PASS, exit 0, authoritative**: 4,361 discovered and executed (as at WP5: no integration test was added), 227 passes (all on the allow-list), 4,134 "unavailable" failures, no violation. The allow-list (227 entries, `8798D5A9…442E`), the must-fail list (188, `17D8A73D…73E3`) and the script (`A75F53F6…E513`) hash as in §9: **no honesty rule, allow-list, test manifest or CI file was touched** (`git diff e2efd12a 5d0f3d41` over `tests/test-manifest.json`, the honesty folder, `scripts` and `.github` is empty) |
+| Guard classes, the new facts and the controls | §13.3 and §13.4 |
+
+**Not run.** The whole `Apperture.IntegrationTests` assembly (4,361 cases, about three hours at WP5) was not repeated: the production change removes two members that nothing called, the compiled solution proves that no project consumed them, and the focused set above covers the two edited SQL classes, the role writers and the real host composition. `Apperture.BrowserTests` belongs to the hosted `browser-security` check. The required hosted CI runs every test regardless (§11). The one linked-worktree failure of §9 (`requires-git-directory`) is in the part not repeated; the honesty run, from a clone, passes that case.
+
+**The documentation commit.** The commit that carries this section changes only Markdown (`git diff 5d0f3d41 HEAD` over `src` and `tests` is empty), so the binaries validated above are the binaries of the final head. Because some test classes read documents, the unit, architecture and both UI suites were run again on the final documents with those binaries: the same results (6,395 of 6,396 passed with the same one not executed, 38 of 38, 1,497 of 1,497, 536 of 536).
+
+### 13.6 Evidence and recovery
+
+- **Evidence archive:** `F:\Code\Apperture\recovery\iam-post-wp5-hardening\evidence`: 114 files (59 MB), `SHA256SUMS.txt` in `sha256sum` format (LF, lowercase hash, forward-slash paths; verified by script and again by `sha256sum -c`, 114 of 114 OK, none unlisted). Manifest SHA-256 `78AF5A82DCFCA5E8ED3085B003126019BA333B9844C264170F1207BC42A9CBE0`. The password literal is in no file (positive control found it in a scratch file). Contents: `dev/` (red runs, probe replays, the nine L-1 and two L-2 controls, their scripts), `final/` (the protocol build log, the five suites' TRX, the focused SQL run and its proof, the test selector's output, the scripts) and `honesty/` (the honesty report, run log and TRX), and `IDENTITY.txt`.
+- **Bundle:** `F:\Code\Apperture\recovery\iam-post-wp5-hardening\bundle\feat-iam10-2b-post-wp5-hardening-<head>.bundle`, the branch at its final commit, with `SHA256SUMS-bundle.txt` beside it (the hash of a bundle cannot be written in a commit it contains, so it is in that file and in the hand-over message). It carries no `HEAD`: clone it with `git clone -b feat/iam10-2b-post-wp5-hardening`. An independent copy of the archive and the bundle is kept at `G:\Backup\Apperture-Core-iam-post-wp5-hardening\`. The earlier G: archives and bundles are untouched.
+- **Working copy** (disposable): the worktree with `artifacts/h1`, `artifacts/h2`, the logs `artifacts/h1-logs` and `artifacts/h2-logs`, and the honesty clone `artifacts/hn`, all under the ignored `artifacts/` of the worktree. Nothing was cleaned up.
+- **Unchanged:** nothing was pushed and no pull request was opened; the IAM branch, `master` and the reviewed evidence under `F:\Code\Apperture\reviews\wp5` are untouched.
