@@ -37,6 +37,23 @@ default is Windows DPAPI; the harness now replaces `ISecretProtector` with a tes
 (`BrowserHarnessSecretProtector`) so Ubuntu can start the host. On failure it uploads the TRX under
 `artifacts/browser-security`. It does not set `APPERTURE_BROWSER_TESTS` on the ordinary `build-and-test` job.
 
+The `browser-security` job runs in a container job on Microsoft's Playwright image for .NET
+(`mcr.microsoft.com/playwright/dotnet:v<Microsoft.Playwright version>-noble`). The image carries the .NET SDK, Chromium,
+Firefox, WebKit and the operating-system libraries they need, so the job installs nothing from the Ubuntu mirrors or the
+Playwright CDN while it runs (it previously installed about 180 Ubuntu packages on every run, and an unreachable mirror
+stalled it until the job limit). Rules that keep this safe, all enforced by `BrowserSecurityCiGuardTests`:
+
+- The image tag must equal the Microsoft.Playwright version in `Directory.Packages.props`. When you upgrade that package,
+  change the tag in `.github/workflows/ci.yml` in the same commit; the guard fails the ordinary `dotnet test` otherwise.
+- The container takes no options (no privileges, host namespaces or mounts).
+- The SQL Server is the job's own service container. In a container job it is reached by its service name on the job
+  network (`Server=sqlserver,1433`), not on `127.0.0.1`, and publishes no port. The harness still applies
+  `SqlTestTargetGuard` to that connection string (a disposable test server, never the development port, only its own
+  `Apperture_` catalog), and the protected-target opt-in is never set in CI.
+- The suite step runs the whole project (no `--filter`), after restore and build, and a failing test fails the job.
+- If a browser engine is missing, the harness downloads it on demand (a local-development convenience). In CI that would
+  hide an image/package mismatch behind a download; the pinned tag is what prevents it.
+
 If your Aspire dev stack holds file locks on the normal `bin/` folders, build into an isolated, git-ignored
 folder first and run with `--no-build`:
 
