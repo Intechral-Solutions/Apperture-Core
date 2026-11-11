@@ -4,7 +4,7 @@ using Apperture.Core.Domain.Identity;
 namespace Apperture.ControlPlane.Security;
 
 /// <summary>
-/// Stub implementation of IRoleProvider. Returns no roles; assign/remove are no-ops.
+/// Stub implementation of IRoleProvider. Returns no roles.
 /// Used when role persistence is not yet implemented.
 /// </summary>
 public sealed class StubRoleProvider : IRoleProvider
@@ -22,12 +22,4 @@ public sealed class StubRoleProvider : IRoleProvider
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<Role>> GetRolesForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
         ValueTask.FromResult(EmptyRoles);
-
-    /// <inheritdoc />
-    public ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-        ValueTask.CompletedTask;
-
-    /// <inheritdoc />
-    public ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-        ValueTask.CompletedTask;
 }

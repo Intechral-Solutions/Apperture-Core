@@ -177,12 +177,6 @@ public sealed class Epic39GovernanceAdminTests
 
         public ValueTask<IReadOnlyList<Role>> GetRolesForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_roles);
-
-        public ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
-
-        public ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
     }
 
     private sealed class StubLocalCredentialRepository : ILocalCredentialRepository

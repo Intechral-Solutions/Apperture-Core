@@ -19,7 +19,7 @@ public sealed class RoleWriterCoverageGuardTests
         /// <summary>A call to assign or remove a role: <c>AssignToUserAsync</c> or <c>RemoveFromUserAsync</c>.</summary>
         RoleAssignmentCall,
 
-        /// <summary>A call through the role provider's assign or remove (an adapter nothing calls).</summary>
+        /// <summary>Any appearance of the role provider's removed assign or remove: it has no classification and must stay absent.</summary>
         RoleProviderAdapterCall,
 
         /// <summary>A call that writes a role's permission JSON: replace, update or create.</summary>
@@ -68,7 +68,6 @@ public sealed class RoleWriterCoverageGuardTests
         new(Persistence + "RoleAuthorizationDataStep.cs", Writes.DirectTableWrite, 1, Group.Exempt, "the startup data step that preserves what the removed role.manage implication gave (audited, one transaction, adds only the grants it names)"),
 
         // Mechanisms: carry out a write that an ordinary or exempt writer decided.
-        new(Security + "SqlRoleProvider.cs", Writes.RoleAssignmentCall, 2, Group.Mechanism, "the role provider's assign and remove, which nothing in production calls"),
         new(Persistence + "SqlRoleRepository.cs", Writes.DirectTableWrite, 9, Group.Mechanism, "the role repository writes its own tables"),
         new(Persistence + "SqlUserRepository.cs", Writes.DirectTableWrite, 1, Group.Mechanism, "persists the role ids of a user it is asked to add"),
         new(Persistence + "SqlUserRepository.cs", Writes.UserCreatedWithRoleIds, 1, Group.Mechanism, "maps a stored user to the domain; not a writer"),
@@ -86,7 +85,9 @@ public sealed class RoleWriterCoverageGuardTests
     // A write is found by the member's name whether or not it is invoked where it is written: a method-group reference
     // (`Func<…> assign = roles.AssignToUserAsync;`) names the same write as a call does (IAM-10.2b post-WP5 hardening, review L-1).
     private static readonly Regex AssignmentCall = new(@"\.(AssignToUserAsync|RemoveFromUserAsync)\b", RegexOptions.CultureInvariant);
-    private static readonly Regex AdapterCall = new(@"\.(AssignRoleToUserAsync|RemoveRoleFromUserAsync)\b", RegexOptions.CultureInvariant);
+    // The role provider's assign and remove were removed (IAM-10.2b post-WP5, review L-2): any appearance of either name, declared,
+    // called or referenced as a method group, is a role writer that bypasses the unit, the gate and the audit.
+    private static readonly Regex RemovedRoleProviderWriter = new(@"\b(AssignRoleToUserAsync|RemoveRoleFromUserAsync)\b", RegexOptions.CultureInvariant);
     private static readonly Regex JsonCall = new(@"\.(UpdatePermissionsAsync|ReplacePermissionsAsync)\b|[Rr]ole\w*\.CreateAsync\b", RegexOptions.CultureInvariant);
     private static readonly Regex DirectWrite = new(@"UserRoles\.(Add|Remove)|new UserRoleEntity|\bRoles\.(Add|Remove)|PermissionsJson\s*=[^=]|new RoleEntity", RegexOptions.CultureInvariant);
     private static readonly Regex NewUser = new(@"new User\(", RegexOptions.CultureInvariant);
@@ -106,8 +107,8 @@ public sealed class RoleWriterCoverageGuardTests
             var code = StripComments(text);
             var assignment = AssignmentCall.Matches(code).Count;
             Add(file, Writes.RoleAssignmentCall, assignment);
-            // The adapter calls are classified by the same kind: a role provider caller is as much a writer as a repository caller.
-            Add(file, Writes.RoleProviderAdapterCall, AdapterCall.Matches(code).Count);
+            // The removed role provider writers must not come back under any shape: a declaration, a call or a method group.
+            Add(file, Writes.RoleProviderAdapterCall, RemovedRoleProviderWriter.Matches(code).Count);
             Add(file, Writes.RolePermissionJsonCall, JsonCall.Matches(code).Count);
             Add(file, Writes.DirectTableWrite, DirectWrite.Matches(code).Count);
             foreach (Match match in NewUser.Matches(code))
@@ -183,11 +184,42 @@ public sealed class RoleWriterCoverageGuardTests
             "a writer of role assignments, role permissions or a user created with roles must be classified in the inventory of this guard");
     }
 
+    /// <summary>The members of <c>IRoleProvider</c>: reads only. Role assignments change only through the audited units.</summary>
+    private static readonly string[] RoleProviderReads = ["GetRoleAsync", "GetRolesAsync", "GetRolesForUserAsync"];
+
     [Fact]
-    public void Nothing_in_production_calls_the_role_providers_assign_or_remove()
+    public void The_role_provider_offers_reads_only_and_no_production_code_names_the_removed_assign_and_remove()
     {
+        // The contract and both production implementations expose exactly the reads. A new member must be classified here (and, if it
+        // writes who holds a role, go through the audited unit, the gate and an audit row instead of existing on the provider).
+        typeof(Apperture.Core.Application.Services.IRoleProvider).GetMethods().Select(m => m.Name)
+            .Should().BeEquivalentTo(RoleProviderReads, "the role provider is read-only: role assignments are written by the audited units");
+        foreach (var implementation in new[] { typeof(SqlRoleProvider), typeof(StubRoleProvider) })
+        {
+            implementation.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly)
+                .Select(m => m.Name).Should().BeEquivalentTo(RoleProviderReads, $"{implementation.Name} offers only the provider's reads");
+        }
+
         Scan(ProductionSource()).Keys.Where(k => k.Kind == Writes.RoleProviderAdapterCall)
-            .Should().BeEmpty("the adapters are unused; a caller would be an unclassified writer that bypasses the rules");
+            .Should().BeEmpty("a production file that names the removed writers would be a role writer outside the unit, the gate and the audit");
+    }
+
+    [Fact]
+    public void The_removed_role_provider_writers_are_found_declared_called_or_referenced_and_not_in_a_comment()
+    {
+        foreach (var text in new[]
+                 {
+                     "ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default);",
+                     "await _roleProvider.RemoveRoleFromUserAsync(userId, roleId, ct);",
+                     "Func<UserId, RoleId, CancellationToken, ValueTask> assign = roleProvider.AssignRoleToUserAsync;",
+                 })
+        {
+            Differences(Scan([(Security + "Writer.cs", text)]))
+                .Should().Contain(d => d.StartsWith("UNCLASSIFIED WRITER") && d.Contains("Writer.cs") && d.Contains(nameof(Writes.RoleProviderAdapterCall)), text);
+        }
+
+        Differences(Scan([(Security + "Reader.cs", "// roleProvider.AssignRoleToUserAsync(a, b) was removed\nvar x = roleProvider.GetRolesForUserAsync(a);")]))
+            .Should().NotContain(d => d.Contains("Reader.cs"));
     }
 
     [Fact]

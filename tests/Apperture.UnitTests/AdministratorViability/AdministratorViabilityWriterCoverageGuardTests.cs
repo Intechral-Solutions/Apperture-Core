@@ -92,8 +92,6 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         new(Security + "UserManagementService.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP2", "assign a role"),
         new(Security + "UserManagementService.cs", Writes.RoleRemove, 1, Class.Reducer, "WP2", "remove a role: may remove the administrator role"),
         new(Security + "UserProvisioningService.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP2", "the initial role of a provisioned person"),
-        new(Security + "SqlRoleProvider.cs", Writes.RoleAssign, 1, Class.OutOfCategory, "-", "the role provider adapter, which nothing in production calls (the role writer guard pins that)"),
-        new(Security + "SqlRoleProvider.cs", Writes.RoleRemove, 1, Class.OutOfCategory, "-", "as above"),
         new(Security + "BootstrapPlatformAdminAssignment.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP4B-D", "startup configuration assigns the administrator role"),
         new(Security + "BootstrapPlatformAdminAssignment.cs", Writes.UserCreatedWithRoleIds, 2, Class.GatedRaiser, "WP4B-D", "startup configuration creates the first administrator"),
         new(Security + "RealBootstrapRecoveryService.cs", Writes.RoleAssign, 1, Class.GatedRaiser, "WP4B-D", "bootstrap recovery restores the administrator role"),

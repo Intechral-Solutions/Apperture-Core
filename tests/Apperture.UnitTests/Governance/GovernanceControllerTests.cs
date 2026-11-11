@@ -281,11 +281,5 @@ public sealed class GovernanceControllerTests
                 false);
             return ValueTask.FromResult<IReadOnlyList<Apperture.Core.Domain.Identity.Role>>([role]);
         }
-
-        public ValueTask AssignRoleToUserAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
-
-        public ValueTask RemoveRoleFromUserAsync(Apperture.Core.Domain.Identity.UserId userId, Apperture.Core.Domain.Identity.RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
     }
 }

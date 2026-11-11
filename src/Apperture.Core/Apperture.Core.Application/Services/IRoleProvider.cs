@@ -3,7 +3,8 @@ using Apperture.Core.Domain.Identity;
 namespace Apperture.Core.Application.Services;
 
 /// <summary>
-/// Provides and resolves roles for actors. Supports system and custom roles.
+/// Provides and resolves roles for actors. Supports system and custom roles. Read-only: who holds a role changes only through the
+/// audited user-management and provisioning units, never through this provider.
 /// </summary>
 public interface IRoleProvider
 {
@@ -21,14 +22,4 @@ public interface IRoleProvider
     /// Gets roles assigned to a user.
     /// </summary>
     ValueTask<IReadOnlyList<Role>> GetRolesForUserAsync(UserId userId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Assigns a role to a user.
-    /// </summary>
-    ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Removes a role assignment from a user.
-    /// </summary>
-    ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default);
 }
