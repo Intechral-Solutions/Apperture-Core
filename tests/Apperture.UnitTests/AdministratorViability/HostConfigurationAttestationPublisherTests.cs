@@ -536,9 +536,14 @@ public sealed class HostConfigurationAttestationPublisherTests
         IHostEnvironment Env(string root, string app = "Apperture.Management.Host") =>
             Mock.Of<IHostEnvironment>(e => e.ContentRootPath == root && e.ApplicationName == app);
 
-        var first = HostAttestationIdentity.Create(Env(@"C:\apps\apperture"), time);
-        var restarted = HostAttestationIdentity.Create(Env(@"C:\apps\apperture\"), time);
-        var elsewhere = HostAttestationIdentity.Create(Env(@"C:\apps\other"), time);
+        // Roots are built with the platform's own path rules: a backslash is only a separator on Windows, so a literal
+        // "C:\apps\apperture\" is a different relative name from "C:\apps\apperture" on Linux.
+        var hostRoot = Path.Combine(Path.GetTempPath(), "apps", "apperture");
+        var otherRoot = Path.Combine(Path.GetTempPath(), "apps", "other");
+
+        var first = HostAttestationIdentity.Create(Env(hostRoot), time);
+        var restarted = HostAttestationIdentity.Create(Env(hostRoot + Path.DirectorySeparatorChar), time);
+        var elsewhere = HostAttestationIdentity.Create(Env(otherRoot), time);
 
         restarted.HostId.Should().Be(first.HostId, "a restart of the same host keeps its id so the new process replaces the old row");
         restarted.ProcessInstanceId.Should().NotBe(first.ProcessInstanceId, "every process is its own owner");
