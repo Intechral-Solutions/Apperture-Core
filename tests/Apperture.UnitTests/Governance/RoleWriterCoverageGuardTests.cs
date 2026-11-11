@@ -83,9 +83,11 @@ public sealed class RoleWriterCoverageGuardTests
             yield return (Path.GetRelativePath(src, path).Replace('\\', '/'), File.ReadAllText(path));
     }
 
-    private static readonly Regex AssignmentCall = new(@"\.(AssignToUserAsync|RemoveFromUserAsync)\(", RegexOptions.CultureInvariant);
-    private static readonly Regex AdapterCall = new(@"\.(AssignRoleToUserAsync|RemoveRoleFromUserAsync)\(", RegexOptions.CultureInvariant);
-    private static readonly Regex JsonCall = new(@"\.(UpdatePermissionsAsync|ReplacePermissionsAsync)\(|[Rr]ole\w*\.CreateAsync\(", RegexOptions.CultureInvariant);
+    // A write is found by the member's name whether or not it is invoked where it is written: a method-group reference
+    // (`Func<…> assign = roles.AssignToUserAsync;`) names the same write as a call does (IAM-10.2b post-WP5 hardening, review L-1).
+    private static readonly Regex AssignmentCall = new(@"\.(AssignToUserAsync|RemoveFromUserAsync)\b", RegexOptions.CultureInvariant);
+    private static readonly Regex AdapterCall = new(@"\.(AssignRoleToUserAsync|RemoveRoleFromUserAsync)\b", RegexOptions.CultureInvariant);
+    private static readonly Regex JsonCall = new(@"\.(UpdatePermissionsAsync|ReplacePermissionsAsync)\b|[Rr]ole\w*\.CreateAsync\b", RegexOptions.CultureInvariant);
     private static readonly Regex DirectWrite = new(@"UserRoles\.(Add|Remove)|new UserRoleEntity|\bRoles\.(Add|Remove)|PermissionsJson\s*=[^=]|new RoleEntity", RegexOptions.CultureInvariant);
     private static readonly Regex NewUser = new(@"new User\(", RegexOptions.CultureInvariant);
 
@@ -254,6 +256,38 @@ public sealed class RoleWriterCoverageGuardTests
         var sources = ProductionSource().Where(s => !s.Relative.EndsWith("RealBootstrapRecoveryService.cs", StringComparison.Ordinal)).ToList();
 
         Differences(Scan(sources)).Should().ContainSingle().Which.Should().StartWith("CLASSIFIED BUT NOT FOUND");
+    }
+
+    /// <summary>
+    /// A reference to a role write method counts as the write, whether or not it is invoked where it is written (IAM-10.2b post-WP5
+    /// hardening, independent review L-1): <c>Func&lt;…&gt; assign = roles.AssignToUserAsync;</c> changes who holds a role once the
+    /// delegate runs, so a rule that looked only for <c>Name(</c> never saw it.
+    /// </summary>
+    [Fact]
+    public void The_guard_finds_a_method_group_reference_to_a_role_writer_as_it_finds_the_call()
+    {
+        var methodGroups = new (string Text, Writes Kind)[]
+        {
+            ("static Func<UserId, RoleId, CancellationToken, ValueTask> R(IRoleRepository roles) => roles.AssignToUserAsync;", Writes.RoleAssignmentCall),
+            ("Func<UserId, RoleId, CancellationToken, ValueTask> remove = _roleRepository.RemoveFromUserAsync;", Writes.RoleAssignmentCall),
+            ("Func<RoleId, string, CancellationToken, ValueTask> update = roles.UpdatePermissionsAsync;", Writes.RolePermissionJsonCall),
+            ("var replace = (Func<RoleId, string, CancellationToken, ValueTask>)_roleRepository.ReplacePermissionsAsync;", Writes.RolePermissionJsonCall),
+            ("Func<Role, CancellationToken, ValueTask> create = roles.CreateAsync;", Writes.RolePermissionJsonCall),
+        };
+        foreach (var (text, kind) in methodGroups)
+        {
+            Differences(Scan([(Security + "Writer.cs", text)]))
+                .Should().Contain(d => d.StartsWith("UNCLASSIFIED WRITER") && d.Contains("Writer.cs") && d.Contains(kind.ToString()), text);
+        }
+
+        // Not writers: a comment, and longer identifiers that merely begin with a write's name.
+        const string notWriters = """
+                // Func<UserId, RoleId, CancellationToken, ValueTask> assign = roles.AssignToUserAsync;
+                var a = roles.AssignToUserAsyncCore;
+                var b = _roleRepository.RemoveFromUserAsyncInternal;
+                var c = roles.UpdatePermissionsAsyncBatch;
+                """;
+        Differences(Scan([(Security + "Reader.cs", notWriters)])).Should().NotContain(d => d.Contains("Reader.cs"));
     }
 
     [Theory]

@@ -174,12 +174,15 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
 
     private static Regex R(string pattern) => new(pattern, RegexOptions.CultureInvariant);
 
-    private static readonly Regex RoleAssignCall = R(@"\.AssignToUserAsync\(");
-    private static readonly Regex RoleRemoveCall = R(@"\.RemoveFromUserAsync\(");
+    // A write is found by the member's name, whether or not it is invoked where it is written: a method-group reference
+    // (`Func<…> disable = credentials.SetDisabledAsync;`) names the same write as a call does. The name ends at a word boundary, so a
+    // longer identifier that begins with it is not a reference (IAM-10.2b post-WP5 hardening, review L-1).
+    private static readonly Regex RoleAssignCall = R(@"\.AssignToUserAsync\b");
+    private static readonly Regex RoleRemoveCall = R(@"\.RemoveFromUserAsync\b");
     private static readonly Regex NewUser = R(@"new User\(");
-    private static readonly Regex DisableCall = R(@"\.SetDisabledAsync\(");
-    private static readonly Regex RegistrationActivateCall = R(@"\.SetActiveAsync\(");
-    private static readonly Regex PolicySaveCall = R(@"\.SaveAsync\(");
+    private static readonly Regex DisableCall = R(@"\.SetDisabledAsync\b");
+    private static readonly Regex RegistrationActivateCall = R(@"\.SetActiveAsync\b");
+    private static readonly Regex PolicySaveCall = R(@"\.SaveAsync\b");
 
     /// <summary>
     /// Every name a file gives to a holder of <paramref name="type"/> (a field, a parameter, a local), with and without a leading
@@ -230,9 +233,10 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     }
 
     /// <summary>
-    /// The calls of <paramref name="method"/> on a receiver named in <paramref name="receivers"/>, directly or null-conditionally (<c>?.</c>),
+    /// The uses of <paramref name="method"/> on a receiver named in <paramref name="receivers"/>, directly or null-conditionally (<c>?.</c>),
     /// and, when <paramref name="resolvedTypes"/> are given, on a store resolved inline from a service provider
-    /// (<c>sp.GetRequiredService&lt;T&gt;().Method(</c>), whatever the provider is called (WP5 pre-hand-over review C3).
+    /// (<c>sp.GetRequiredService&lt;T&gt;().Method(</c>), whatever the provider is called (WP5 pre-hand-over review C3). A use is a call
+    /// or a method-group reference: the member's name ends at a word boundary and need not be followed by a parenthesis (post-WP5 review L-1).
     /// </summary>
     private static int CallsOn(string code, string[] receivers, string method, params string[] resolvedTypes)
     {
@@ -243,7 +247,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
             alternatives.Add(@"\bGet(?:Required)?Service<\s*(?:global::)?(?:\w+\.)*(?:" + string.Join("|", resolvedTypes.Select(Regex.Escape)) + @")\s*>\s*\(\s*\)\s*!?");
         return alternatives.Count == 0
             ? 0
-            : Regex.Matches(code, "(?:" + string.Join("|", alternatives) + @")\s*\??\.\s*" + method + @"\(", RegexOptions.CultureInvariant).Count;
+            : Regex.Matches(code, "(?:" + string.Join("|", alternatives) + @")\s*\??\.\s*" + method + @"\b", RegexOptions.CultureInvariant).Count;
     }
 
     /// <summary>
@@ -327,8 +331,8 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     private static int MfaEnrolCalls(string code, string fileCode) =>
         CallsOn(code, TotpStores(fileCode), "MarkEnrolledAsync", TotpStoreTypes) + CallsOn(code, RecoveryCodeStores(fileCode), "ReplaceAllAsync", RecoveryCodeStoreTypes);
 
-    private static readonly Regex PasswordSetCall = R(@"\.SetPasswordAsync\(");
-    private static readonly Regex UsernameChangeCall = R(@"_users\.ChangeUsernameAsync\(");
+    private static readonly Regex PasswordSetCall = R(@"\.SetPasswordAsync\b");
+    private static readonly Regex UsernameChangeCall = R(@"_users\.ChangeUsernameAsync\b");
 
     private static Dictionary<(string File, Writes Kind), int> Scan(IEnumerable<(string Relative, string Text)> sources)
     {
@@ -1012,7 +1016,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     public void The_conditional_designation_setter_has_one_production_caller_and_it_is_the_recovery_access_service()
     {
         var callers = ProductionSource()
-            .Select(s => (s.Relative, Count: Regex.Matches(StripComments(s.Text), @"\.TrySetDesignationAsync\(", RegexOptions.CultureInvariant).Count))
+            .Select(s => (s.Relative, Count: Regex.Matches(StripComments(s.Text), @"\.TrySetDesignationAsync\b", RegexOptions.CultureInvariant).Count))
             .Where(s => s.Count > 0)
             .ToList();
 
@@ -1037,7 +1041,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
         foreach (var file in new[] { Security + "AccountContactService.cs", Security + "AccountInvitationService.cs", Security + "AccountProfileService.cs" })
         {
             var code = StripComments(Source(file));
-            Regex.Matches(code, @"_users\.UpdateAsync\(", RegexOptions.CultureInvariant).Count
+            Regex.Matches(code, @"_users\.UpdateAsync\b", RegexOptions.CultureInvariant).Count
                 .Should().Be(1, $"{file}: every user write goes through the one wrapper that maps a changed designation");
             code.Should().Contain("catch (UserDesignationChangedException");
             code.Should().NotContain("IsBreakGlassEligible =");
@@ -1063,7 +1067,7 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
     [Fact]
     public void Every_writer_that_checks_the_system_managed_restriction_on_a_copy_is_named_with_its_recheck()
     {
-        var protectedWrite = R(@"\.(UpdateAsync|SetPasswordAsync|ChangeUsernameAsync|AddIdentityLinkAsync|CompleteEntraLinkProofAsync)\(|\bUpdateUserAsync\(");
+        var protectedWrite = R(@"\.(UpdateAsync|SetPasswordAsync|ChangeUsernameAsync|AddIdentityLinkAsync|CompleteEntraLinkProofAsync)\b|\bUpdateUserAsync\b");
         var found = ProductionSource()
             .Where(s => !s.Relative.StartsWith("Apperture.Persistence/", StringComparison.Ordinal))
             .Select(s => (s.Relative, Code: StripComments(s.Text)))
@@ -1592,6 +1596,75 @@ public sealed class AdministratorViabilityWriterCoverageGuardTests
                 """;
         Differences(Scan([("Some/New/Reader.cs", notWriters)]), Inventory).Should().NotContain(d => d.Contains("Reader.cs"));
         DirectViabilityTableAccess("Some/New/Reader.cs", StripComments(notWriters)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A reference to a protected write method counts as the write, whether or not it is invoked where it is written (IAM-10.2b post-WP5
+    /// hardening, independent review L-1). <c>Func&lt;…&gt; disable = credentials.SetDisabledAsync;</c> names the write without a call
+    /// parenthesis and changes the same row once the delegate runs, so a rule that looked only for <c>Name(</c> never saw it. Each row is
+    /// one write kind counted by a call rule, written as a method group on a receiver that kind's rule recognises: declared with the
+    /// store's type, a <c>var</c> resolved from a service provider, resolved inline, or (for the rules that go by the member name) any
+    /// receiver at all.
+    /// </summary>
+    [Fact]
+    public void A_method_group_reference_to_a_protected_writer_is_found_as_a_writer_as_the_call_is()
+    {
+        var methodGroups = new (string Text, Writes Kind)[]
+        {
+            // The reviewer's reproduction (PR2): the delegate is made from the credential store's write and invoked later.
+            ("static async Task R(ILocalCredentialRepository credentials, UserId id) { Func<UserId, bool, CancellationToken, ValueTask> disable = credentials.SetDisabledAsync; await disable(id, true, default); }", Writes.CredentialDisable),
+            ("static Func<UserId, RoleId, CancellationToken, ValueTask> R(IRoleRepository roles) => roles.AssignToUserAsync;", Writes.RoleAssign),
+            ("static Func<UserId, RoleId, CancellationToken, ValueTask> R(IRoleRepository roles) => roles.RemoveFromUserAsync;", Writes.RoleRemove),
+            // Through the user store: declared, resolved into a var, resolved inline.
+            ("static Func<UserId, IdentitySource, string, CancellationToken, ValueTask> R(IUserRepository users) => users.AddIdentityLinkAsync;", Writes.LinkAdd),
+            ("static Func<UserId, IdentitySource, string, CancellationToken, ValueTask> R(IServiceProvider sp) { var store = sp.GetRequiredService<IUserRepository>(); return store.RemoveIdentityLinkAsync; }", Writes.LinkRemove),
+            ("static object R(IServiceProvider sp) => (Func<UserId, bool, bool, CancellationToken, ValueTask<bool>>)sp.GetService<global::Apperture.Core.Application.Services.IUserRepository>()!.TrySetDesignationAsync;", Writes.DesignationFlagUpdate),
+            ("private readonly IUserRepository _users; object R() => (Func<UserId, string, CancellationToken, ValueTask>)_users.CompleteEntraLinkProofAsync;", Writes.LinkProof),
+            ("private readonly IUserRepository _users; object R() => (Func<UserId, DateTimeOffset, CancellationToken, ValueTask>)_users.UpdateLastAuthenticatedAtAsync;", Writes.LinkProof),
+            // The registration and sign-in policy stores.
+            ("static Func<EntraInstanceRegistration, CancellationToken, ValueTask> R(IEntraInstanceRegistrationRepository registrations) => registrations.AddAsync;", Writes.RegistrationCreate),
+            ("static Func<EntraInstanceRegistration, CancellationToken, ValueTask> R(IServiceProvider sp) { var store = sp.GetRequiredService<IEntraInstanceRegistrationRepository>(); return store.UpdateAsync; }", Writes.RegistrationUpdate),
+            ("static Func<string, CancellationToken, ValueTask> R(IServiceProvider sp) => sp.GetRequiredService<IEntraInstanceRegistrationRepository>().DeleteAsync;", Writes.RegistrationDelete),
+            ("static Func<string, CancellationToken, ValueTask> R(object registrations) => registrations.SetActiveAsync;", Writes.RegistrationActivate),
+            ("static Func<InstanceAuthUiPolicy, CancellationToken, ValueTask> R(IInstanceAuthUiPolicyRepository policies) => policies.SaveAsync;", Writes.PolicySave),
+            // The authenticator and recovery-code stores.
+            ("private readonly INativeTotpCredentialRepository _totp; object R() => (Func<UserId, CancellationToken, ValueTask>)_totp.DeleteAsync;", Writes.MfaReset),
+            ("static Func<UserId, CancellationToken, ValueTask> R(IServiceProvider sp) => sp.GetRequiredService<INativeMfaRecoveryCodeRepository>().DeleteAllAsync;", Writes.MfaReset),
+            ("static Func<UserId, CancellationToken, ValueTask> R(INativeTotpCredentialRepository credentials) => credentials.MarkEnrolledAsync;", Writes.MfaEnrol),
+            ("static Func<UserId, string[], CancellationToken, ValueTask> R(INativeMfaRecoveryCodeRepository codes) => codes.ReplaceAllAsync;", Writes.MfaEnrol),
+            ("static Func<UserId, CancellationToken, ValueTask> R(INativeTotpCredentialRepository credentials) => credentials.UpsertPendingAsync;", Writes.MfaPendingWrite),
+            ("static Func<UserId, string, CancellationToken, ValueTask<bool>> R(INativeMfaRecoveryCodeRepository codes) => codes.MarkConsumedAsync;", Writes.MfaConsume),
+            ("static Func<UserId, long, CancellationToken, ValueTask> R(INativeTotpCredentialRepository credentials) => credentials.UpdateLastUsedAsync;", Writes.MfaStep),
+            // The replacement candidates, whichever way the repository was obtained.
+            ("static Func<NativeMfaSwitchRequest, ValueTask> R(IServiceProvider services) { var store = services.GetRequiredService<INativeMfaReplacementCandidateRepository>(); return store.SwitchAsync; }", Writes.MfaCandidateSwitch),
+            ("static Func<UserId, CancellationToken, ValueTask> R(INativeMfaReplacementCandidateRepository candidates) => candidates.StageAsync;", Writes.MfaCandidateStage),
+            ("static Func<UserId, CancellationToken, ValueTask> R(SqlNativeMfaReplacementCandidateRepository candidates) => candidates.MarkVerifiedAsync;", Writes.MfaCandidateVerify),
+            ("static Func<UserId, CancellationToken, ValueTask> R(INativeMfaReplacementCandidateRepository candidates) => candidates.DiscardAsync;", Writes.MfaCandidateDiscard),
+            // The writers classified out of category are counted the same way, so a new one cannot hide behind a delegate either.
+            ("static Func<UserId, string, CancellationToken, ValueTask> R(ILocalCredentialRepository credentials) => credentials.SetPasswordAsync;", Writes.PasswordSet),
+            ("private readonly IUserRepository _users; object R() => (Func<UserId, string, CancellationToken, ValueTask>)_users.ChangeUsernameAsync;", Writes.UsernameChange),
+        };
+        foreach (var (text, kind) in methodGroups)
+        {
+            Differences(Scan([("Some/New/Writer.cs", text)]), Inventory)
+                .Should().Contain(d => d.StartsWith("UNCLASSIFIED WRITER") && d.Contains("Writer.cs") && d.Contains(kind.ToString()), text);
+        }
+
+        // Not writers: a comment, a longer identifier that begins with a write's name, and a method group of a service of the same name.
+        const string notWriters = """
+                // Func<UserId, bool, CancellationToken, ValueTask> disable = credentials.SetDisabledAsync;
+                private readonly IUserManagementService _userManagement;
+                private readonly IUserRepositoryFactory _factory;
+                object R(UserId id, ILocalCredentialRepository credentials, INativeTotpCredentialRepository totp)
+                {
+                    var a = credentials.SetDisabledAsyncCore;
+                    var b = totp.DeleteAsyncOrDefault;
+                    var c = (Func<UserId, IdentitySource, string, CancellationToken, ValueTask>)_userManagement.RemoveIdentityLinkAsync;
+                    var d = nameof(IUserRepositoryFactory);
+                    return (a, b, c, d);
+                }
+                """;
+        Differences(Scan([("Some/New/Reader.cs", notWriters)]), Inventory).Should().NotContain(d => d.Contains("Reader.cs"));
     }
 
     /// <summary>
