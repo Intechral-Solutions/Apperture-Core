@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
@@ -15,6 +16,10 @@ namespace Apperture.ControlPlane.Security;
 /// assignment, and their rows commit together: <c>bootstrap.configured_admin.created</c> plus the role's
 /// <c>governance.role.assignment.created</c>, or the assignment row alone for an existing user. A principal that already holds
 /// the role changes nothing and writes no row. Configuration that cannot be applied is skipped and logged, as before.
+/// IAM-10.2b WP4B-D: each principal's unit takes the global administrator-set gate first (after its operation lock), so the lookup
+/// that decides it and the write are made against the state the previous holder committed. A gate held past its bound is not a
+/// reason to skip the principal: the typed contention outcome propagates and the start fails, like every other startup step that
+/// did not complete.
 /// </remarks>
 public static class BootstrapPlatformAdminAssignment
 {
@@ -39,6 +44,7 @@ public static class BootstrapPlatformAdminAssignment
         IRoleRepository roleRepository,
         ILogger? logger,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
+        IAdministratorViabilityCoordinator? viability = null,
         CancellationToken cancellationToken = default)
     {
         if (!options.Enabled || options.Principals.Count == 0)
@@ -56,6 +62,8 @@ public static class BootstrapPlatformAdminAssignment
 
         var unit = auditedUnitOfWork
             ?? throw new InvalidOperationException("Bootstrap principal assignment requires the audited unit of work.");
+        var gate = viability
+            ?? throw new InvalidOperationException("Bootstrap principal assignment requires the administrator viability coordinator.");
 
         foreach (var p in options.Principals)
         {
@@ -122,6 +130,12 @@ public static class BootstrapPlatformAdminAssignment
                     {
                         affected = null;
                         createdUsername = null;
+
+                        // Cannot reduce: it either creates a new account, which holds no administrator role, credential or link before
+                        // the change, or gives the administrator role to an account that does not hold it; it removes nothing, so
+                        // nobody's viability is taken away. The gate comes first after the operation lock and is taken again by every
+                        // attempt, so the lookup below sees what the previous holder committed under both isolation modes.
+                        await gate.EnterGateOnlyAsync(ct).ConfigureAwait(false);
 
                         var existing = source == IdentitySource.Entra
                             ? await userRepository.GetByIdentityLinkAsync(ProviderIdentityKey.Entra(tenantId!, externalId), ct).ConfigureAwait(false)

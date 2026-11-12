@@ -8,20 +8,56 @@ public interface INativeTotpCredentialRepository
 {
     ValueTask<NativeTotpStoredCredential?> GetByUserIdAsync(UserId userId, CancellationToken cancellationToken = default);
 
-    ValueTask UpsertPendingAsync(
+    /// <summary>
+    /// Writes a pending (not yet enrolled) credential: replaces the pending one or creates the first. It never changes an enrolled
+    /// credential, however the call interleaves with an enrolment that completes: the condition is evaluated by the database as it
+    /// writes. True when the pending credential was written; false when an enrolled credential exists and nothing was changed.
+    /// </summary>
+    ValueTask<bool> UpsertPendingAsync(
         UserId userId,
         byte[] protectedSecret,
         string protectorKeyId,
         DateTimeOffset startedAtUtc,
         CancellationToken cancellationToken = default);
 
-    ValueTask MarkEnrolledAsync(UserId userId, long lastUsedStep, DateTimeOffset enrolledAtUtc, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Enrolls the pending credential whose secret the caller verified: the row must still be pending <b>and</b> still be the one
+    /// identified by <paramref name="expectedCredentialId"/> (the <see cref="NativeTotpStoredCredential.CredentialId"/> read together
+    /// with the secret that was checked). The database evaluates both as it writes, so a begin that replaced the pending secret
+    /// after the code was checked can never leave the account enrolled on a secret nobody verified. True when the credential was
+    /// enrolled; false when nothing was changed (the row is gone, already enrolled, or holds a different secret).
+    /// </summary>
+    ValueTask<bool> MarkEnrolledAsync(
+        UserId userId,
+        string expectedCredentialId,
+        long lastUsedStep,
+        DateTimeOffset enrolledAtUtc,
+        CancellationToken cancellationToken = default);
 
-    ValueTask UpdateLastUsedAsync(UserId userId, long lastUsedStep, DateTimeOffset verifiedAtUtc, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Records a sign-in's accepted TOTP step, and is what makes the code single-use: one statement whose condition the database
+    /// evaluates as it writes. The row must belong to <paramref name="userId"/>, be enrolled, still be the credential identified by
+    /// <paramref name="expectedCredentialId"/> (the <see cref="NativeTotpStoredCredential.CredentialId"/> read together with the
+    /// secret the code was checked against), and have no recorded step or one strictly lower than <paramref name="matchedStep"/>.
+    /// True when the step was recorded; false when nothing was changed. On false the caller must reject the sign-in: the secret
+    /// was replaced or reset after the code was checked, or another sign-in already consumed this step or a later one.
+    /// </summary>
+    ValueTask<bool> UpdateLastUsedAsync(
+        UserId userId,
+        string expectedCredentialId,
+        long matchedStep,
+        DateTimeOffset verifiedAtUtc,
+        CancellationToken cancellationToken = default);
 
+    /// <summary>Removes the credential. A replacement candidate staged for the user is removed with it: it was staged against a credential that no longer exists.</summary>
     ValueTask DeleteAsync(UserId userId, CancellationToken cancellationToken = default);
 }
 
+/// <param name="CredentialId">
+/// The identity of the stored secret. A pending write, an enrolment's switch to a replacement secret and a first creation each give
+/// the row a new one; enrolling, signing in and the recovery codes do not change it. A caller that checked a code against this
+/// secret presents the id back to prove it is still the secret that was checked.
+/// </param>
 public sealed record NativeTotpStoredCredential(
     UserId UserId,
     byte[] ProtectedSecret,
@@ -30,16 +66,25 @@ public sealed record NativeTotpStoredCredential(
     long? LastUsedStep,
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset? EnrolledAtUtc,
-    DateTimeOffset? LastVerifiedAtUtc);
+    DateTimeOffset? LastVerifiedAtUtc,
+    string CredentialId);
 
 /// <summary>Persistence for hashed MFA recovery codes.</summary>
 public interface INativeMfaRecoveryCodeRepository
 {
     ValueTask<IReadOnlyList<NativeMfaRecoveryCodeRecord>> ListAsync(UserId userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Replaces the user's codes. A replacement candidate staged for the user is removed first: the codes it would have replaced are no longer the ones the operator saw.</summary>
     ValueTask ReplaceAllAsync(UserId userId, IReadOnlyList<NativeMfaRecoveryCodeRecord> codes, CancellationToken cancellationToken = default);
 
-    ValueTask MarkConsumedAsync(string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Consumes one recovery code of <paramref name="userId"/>, and is what makes the code single-use: one statement whose condition the
+    /// database evaluates as it writes (the code is this user's and is still unused). True when this call consumed it; false when nothing
+    /// was changed. On false the caller must reject the sign-in: another sign-in consumed the code after this one read it as unused, or it
+    /// was replaced or removed.
+    /// </summary>
+    ValueTask<bool> MarkConsumedAsync(UserId userId, string codeId, DateTimeOffset consumedAtUtc, CancellationToken cancellationToken = default);
 
+    /// <summary>Removes the user's codes and, as <see cref="ReplaceAllAsync"/> does, any replacement candidate staged for the user.</summary>
     ValueTask DeleteAllAsync(UserId userId, CancellationToken cancellationToken = default);
 }

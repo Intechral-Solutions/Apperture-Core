@@ -194,6 +194,34 @@ public sealed class ManagementHostSessionIdentityHttpTests
         (await MeAsync(client)).UserId.Should().Be(recovery.Id.Value);
     }
 
+    /// <summary>
+    /// <see cref="AuthController"/> takes its MFA service as an optional constructor parameter, which the container leaves null when the
+    /// service is not registered, and the sign-in decides the second factor only through that service. The authenticator here is enrolled
+    /// through an MFA service built from the host's own stores rather than resolved as the host's registration, so if the host ever stopped
+    /// giving the sign-in its MFA service, it is this test's assertions on the sign-in that fail, not its arrangement.
+    /// </summary>
+    [Fact]
+    public async Task A_password_alone_never_issues_a_session_to_an_account_with_an_enrolled_authenticator()
+    {
+        var person = await CreatePersonAsync(withEntraLink: false);
+        var secret = await EnrolAuthenticatorOutsideTheHostsRegistrationAsync(person);
+        var client = _fixture.Factory!.CreateClient();
+
+        var password = await client.PostAsJsonAsync("/api/auth/local/login", new LocalLoginRequest(person.Username, Password));
+
+        password.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await password.Content.ReadFromJsonAsync<LocalLoginResponse>(JsonOptions))!.RequiresMfa.Should().BeTrue("the account has an enrolled authenticator");
+        SessionCookieFrom(password).Should().BeNull("a password alone never issues a session to an account with an enrolled authenticator");
+        (await client.GetAsync("/api/auth/me")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var mfa = await client.PostAsJsonAsync("/api/auth/local/mfa", new LocalMfaChallengeRequest(Totp(secret, stepsAhead: 1), null));
+
+        mfa.StatusCode.Should().Be(HttpStatusCode.OK);
+        Unprotect(_fixture.Factory.Services, SessionCookieFrom(mfa)!).FindFirst(AuthenticationAssuranceClaims.MechanismClaimType)!.Value
+            .Should().Be(AuthenticationAssuranceClaims.NativeTotpMechanism);
+        (await MeAsync(client)).UserId.Should().Be(person.Id.Value);
+    }
+
     [Fact]
     public async Task The_legacy_break_glass_endpoint_issues_a_user_id_session_that_keeps_its_marker()
     {
@@ -288,6 +316,20 @@ public sealed class ManagementHostSessionIdentityHttpTests
         await mfa.CompleteEnrollmentAsync(id, Totp(secret, stepsAhead: 0), AuditActor.EmergencyCli);
 
         return new RecoveryAccessAccount(id, user.Username, secret);
+    }
+
+    /// <summary>
+    /// Enrols an authenticator for <paramref name="person"/> through an MFA service built by <see cref="ActivatorUtilities"/> from the
+    /// host's own stores, protector, gate and audited unit, not through the host's <see cref="INativeMfaService"/> registration.
+    /// </summary>
+    private async Task<byte[]> EnrolAuthenticatorOutsideTheHostsRegistrationAsync(Person person)
+    {
+        await using var scope = _fixture.Factory!.Services.CreateAsyncScope();
+        var mfa = ActivatorUtilities.CreateInstance<NativeMfaService>(scope.ServiceProvider);
+        var enrollment = await mfa.BeginEnrollmentAsync(person.Id, person.Username);
+        var secret = Base32.Decode(enrollment.ManualEntryKey);
+        await mfa.CompleteEnrollmentAsync(person.Id, Totp(secret, stepsAhead: 0), AuditActor.EmergencyCli);
+        return secret;
     }
 
     private async Task AddEntraLinkAsync(UserId userId, string objectId)

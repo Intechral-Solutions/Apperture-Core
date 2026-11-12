@@ -834,14 +834,14 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
             principal,
             new AllowAll(),
             Configuration(),
-            Options.Create(new LocalAuthOptions { Enabled = localEnabled }),
             new SqlInstanceAuthUiPolicyRepository(db),
             Unused<IEntraOpenIdConnectConfigurationValidator>(),
             Unused<IEntraDirectoryDiscoveryService>(),
             new EntraClientSecretMaterialProvisioner(store ?? Unused<ISecretStore>()),
             Unused<ISecretResolver>(),
             unit ?? NewUnit(db, principal),
-            new SqlAuditEventWriter(_db.Options(), principal, HarnessCatalog, null, null, null)));
+            new SqlAuditEventWriter(_db.Options(), principal, HarnessCatalog, null, null, null),
+            EntraRegistrationSqlHarness.Viability(db, localEnabled, resolver: EntraRegistrationSqlHarness.SecretResolver(db))));
 
     private static ConfigAuthUiPolicyController Policy(AppertureDbContext db, IPrincipalContext principal) =>
         WithContext(new ConfigAuthUiPolicyController(
@@ -850,7 +850,8 @@ public sealed class AuthConfigurationAuditSqlServerTests : IAsyncLifetime
             new AllowAll(),
             Options.Create(new LocalAuthOptions { Enabled = true }),
             Options.Create(new EntraAuthOptions()),
-            NewUnit(db, principal)));
+            NewUnit(db, principal),
+            EntraRegistrationSqlHarness.Viability(db, resolver: EntraRegistrationSqlHarness.SecretResolver(db))));
 
     private static T WithContext<T>(T controller) where T : ControllerBase
     {

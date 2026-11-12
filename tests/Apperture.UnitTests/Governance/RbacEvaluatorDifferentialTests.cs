@@ -58,8 +58,6 @@ public sealed class RbacEvaluatorDifferentialTests
 
         public ValueTask<IReadOnlyList<Role>> GetRolesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<Role?> GetRoleAsync(RoleId roleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     /// <summary>The roles of one scenario as the repository would hand them out, or the exception it would throw reading them.</summary>

@@ -110,6 +110,10 @@
                         <li>Authenticator: @(_emergency.NativeMfaEnrolled ? "Enrolled" : "Not enrolled")</li>
                         <li>Recovery codes: @_emergency.UnusedRecoveryCodeCount available</li>
                     </ul>
+                    @if (!string.IsNullOrEmpty(_emergency.DesignatedUserId) && _emergency.NativeMfaEnrolled && _emergency.UnusedRecoveryCodeCount == 0)
+                    {
+                        <PageMessage Kind="PageMessageKind.Warning" Message="Recovery codes are exhausted: every code has been used, so Recovery Access is not healthy. Run 'emergency regenerate-codes' in the Emergency Access operator tooling to get a new set." />
+                    }
                     @if (_emergency.FallbackSafeguardRequired)
                     {
                         <p class="mt-2 text-xs text-muted">Last-administrator local fallback is still required until Emergency Access is healthy.</p>

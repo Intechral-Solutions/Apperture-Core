@@ -1,8 +1,12 @@
 using System.Reflection;
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
+using Apperture.Core.Application.AdministratorViability;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Security.Secrets.Abstractions;
+using Apperture.Core.Security.Secrets.Providers;
 using Apperture.Management.Api.Controllers;
 using Apperture.Management.Api.Models;
 using Apperture.Persistence.SqlServer;
@@ -41,27 +45,101 @@ internal static class EntraRegistrationSqlHarness
         "Id, DisplayName, Authority, ClientId, UsesDeploymentSecret, ClientSecretRef, CallbackPath, Enabled, IsActive, CreatedUtc, UpdatedUtc, "
         + "RowVersion, AzureTenantId, AuthenticationContextId, AllowMemberAccessRequests, AllowGuestAccessRequests";
 
+    /// <summary>
+    /// The administrator viability the registration writers decide under, over <paramref name="db"/>: the real gate and the real
+    /// reads, with the deployment as <paramref name="reading"/> says (by default a host with Local sign-in on or off as
+    /// <paramref name="localEnabled"/> says and no running Entra handler, so the Now view stands in for the Restart view) and
+    /// the secret store read through <paramref name="resolver"/>.
+    /// </summary>
+    public static AdministratorViabilityCoordinator Viability(
+        AppertureDbContext db,
+        bool localEnabled = true,
+        DeploymentAuthenticationReading? reading = null,
+        ISecretResolver? resolver = null,
+        IPlatformAdministratorSetGate? gate = null,
+        IDeploymentAuthenticationConfiguration? deployment = null)
+    {
+        deployment ??= new FixedDeployment(reading ?? AdministratorViabilitySqlServerTests.Reading(null, localEnabled));
+        return new AdministratorViabilityCoordinator(
+            gate ?? new SqlPlatformAdministratorSetGate(db),
+            new AdministratorViabilityService(
+                new SqlAdministratorFactsReader(db),
+                new EffectiveSignInConfigurationProvider(deployment, new SqlEntraInstanceRegistrationRepository(db), resolver)),
+            deployment);
+    }
+
+    /// <summary>A deployment reading that never changes and counts how often it was initialized and read.</summary>
+    public sealed class FixedDeployment(DeploymentAuthenticationReading reading) : IDeploymentAuthenticationConfiguration
+    {
+        private int _reads;
+        private int _initialized;
+
+        public int Reads => Volatile.Read(ref _reads);
+
+        public int Initializations => Volatile.Read(ref _initialized);
+
+        public DeploymentAuthenticationReading Read()
+        {
+            Interlocked.Increment(ref _reads);
+            return reading;
+        }
+
+        public void EnsureInitialized() => Interlocked.Increment(ref _initialized);
+    }
+
+    /// <summary>The SQL secret resolver over <paramref name="db"/> with a protector that stores the plaintext, as the audit suites use.</summary>
+    public static ISecretResolver SecretResolver(AppertureDbContext db) =>
+        new SqlSecretResolver(SecretStore(db), new ConnectionSqlHarness.PassThroughProtector());
+
+    public static SqlSecretStore SecretStore(AppertureDbContext db) =>
+        new(db, new ConnectionSqlHarness.PassThroughProtector(), new DefaultSecretAuditActorProvider());
+
     public static ConfigEntraTenantsController Controller(
         AuditSqlScratch scratch,
         AppertureDbContext db,
         IPrincipalContext principal,
         IEntraOpenIdConnectConfigurationValidator? validator = null,
         IEntraDirectoryDiscoveryService? discovery = null,
-        IAuthorizationEvaluationService? authorization = null)
+        IAuthorizationEvaluationService? authorization = null,
+        IAdministratorViabilityCoordinator? viability = null,
+        bool localEnabled = true,
+        ISecretStore? store = null,
+        IAuditedUnitOfWork? unit = null,
+        IAuditEventWriter? events = null)
     {
         var controller = new ConfigEntraTenantsController(
             new SqlEntraInstanceRegistrationRepository(db),
             principal,
             authorization ?? new AllowAll(),
             new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Entra:ClientSecret"] = "deployment-secret" }).Build(),
-            Options.Create(new LocalAuthOptions { Enabled = true }),
             new SqlInstanceAuthUiPolicyRepository(db),
             validator ?? new ScriptedValidator(),
             discovery ?? new ScriptedDiscovery(),
-            new EntraClientSecretMaterialProvisioner(Unused<ISecretStore>()),
+            new EntraClientSecretMaterialProvisioner(store ?? Unused<ISecretStore>()),
             Unused<ISecretResolver>(),
-            NewUnit(db, principal),
-            new SqlAuditEventWriter(scratch.Options(), principal, HarnessCatalog, null, null, null));
+            unit ?? NewUnit(db, principal),
+            events ?? new SqlAuditEventWriter(scratch.Options(), principal, HarnessCatalog, null, null, null),
+            viability ?? Viability(db, localEnabled, resolver: SecretResolver(db)));
+        controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
+        return controller;
+    }
+
+    public static ConfigAuthUiPolicyController PolicyController(
+        AuditSqlScratch scratch,
+        AppertureDbContext db,
+        IPrincipalContext principal,
+        IAdministratorViabilityCoordinator? viability = null,
+        IAuthorizationEvaluationService? authorization = null,
+        IAuditedUnitOfWork? unit = null)
+    {
+        var controller = new ConfigAuthUiPolicyController(
+            new SqlInstanceAuthUiPolicyRepository(db),
+            principal,
+            authorization ?? new AllowAll(),
+            Options.Create(new LocalAuthOptions { Enabled = true }),
+            Options.Create(new EntraAuthOptions()),
+            unit ?? NewUnit(db, principal),
+            viability ?? Viability(db, resolver: SecretResolver(db)));
         controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
         return controller;
     }

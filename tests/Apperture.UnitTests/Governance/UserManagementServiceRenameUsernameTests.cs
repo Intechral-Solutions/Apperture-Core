@@ -313,6 +313,7 @@ public sealed class UserManagementServiceRenameUsernameTests
             string newUsername,
             string retiredReason,
             string? newDisplayName = null,
+            bool expectedDesignation = false,
             CancellationToken cancellationToken = default)
         {
             // As the transaction does: the stored name must still be the one the caller saw.

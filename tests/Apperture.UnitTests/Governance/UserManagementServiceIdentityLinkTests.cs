@@ -1,6 +1,10 @@
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application;
+using Apperture.Core.Application.AdministratorViability;
+using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.Core.Domain.Governance;
 using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
@@ -151,8 +155,12 @@ public sealed class UserManagementServiceIdentityLinkTests
         repo.AddedLinks.Should().ContainSingle(l => l.Source == IdentitySource.Local && l.ExternalId == "jane.doe");
     }
 
+    // Whether an administrator can really sign in (a pending Microsoft link is not a path, a proven one is only while Microsoft
+    // sign-in works) is decided by the shared guard and proven against real credentials and links on SQL Server. These cases show
+    // what the service does with the guard's answer.
+
     [Fact]
-    public async Task RemoveIdentityLinkAsync_will_not_leave_the_last_admin_with_only_a_pending_entra_link()
+    public async Task RemoveIdentityLinkAsync_is_a_typed_409_conflict_when_the_guard_finds_no_one_left_able_to_sign_in()
     {
         var userId = new UserId("usr-last-admin");
         var repo = new InMemoryUserRepository(new User(
@@ -165,17 +173,105 @@ public sealed class UserManagementServiceIdentityLinkTests
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
             false)
         { Username = "operator" });
-        var service = NewService(repo, new StubEntraAssociation(), soleAdmin: true);
+        var audit = new AuditRecording();
+        var gate = new RecordingGate();
+        var service = NewService(
+            repo,
+            new StubEntraAssociation(),
+            audit,
+            FakeViability.Scripted(gate, ViabilityTestData.Same([userId.Value], [userId.Value]), ViabilityTestData.Same([])));
 
         Func<Task> act = async () =>
             await service.RemoveIdentityLinkAsync(userId, IdentitySource.Local, "operator", CancellationToken.None);
 
-        var ex = await act.Should().ThrowAsync<IdentityLinkException>();
-        ex.Which.Code.Should().Be(IdentityLinkErrorCodes.LastViableSignInMethod);
+        var ex = await act.Should().ThrowAsync<GovernanceConflictException>();
+        ex.Which.Code.Should().Be(GovernanceConflictCodes.LastViableSignInMethod);
+        ex.Which.Message.Should().Contain("sign-in method", "the refusal says what to fix");
+        gate.Acquired.Should().Be(1);
+        audit.Actions.Should().Equal(AuditActionNames.BlockedLastAdminLinkRemoved);
     }
 
     [Fact]
-    public async Task RemoveIdentityLinkAsync_allows_removal_when_the_entra_link_is_proven_and_usable()
+    public async Task RemoveIdentityLinkAsync_of_an_entra_link_is_guarded_too()
+    {
+        var userId = new UserId("usr-entra-only-admin");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Only admin",
+            [
+                new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow),
+                new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow, TenantId)
+            ],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            false)
+        { Username = "operator" });
+        var audit = new AuditRecording();
+        var service = NewService(
+            repo,
+            new StubEntraAssociation(),
+            audit,
+            FakeViability.Scripted(new RecordingGate(), ViabilityTestData.Same([userId.Value]), ViabilityTestData.Same([])));
+
+        Func<Task> act = async () =>
+            await service.RemoveIdentityLinkAsync(userId, IdentitySource.Entra, FirstOid, CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GovernanceConflictException>()).Which.Code.Should().Be(GovernanceConflictCodes.LastViableSignInMethod);
+        audit.Actions.Should().Equal(AuditActionNames.BlockedLastAdminLinkRemoved);
+    }
+
+    [Fact]
+    public async Task RemoveIdentityLinkAsync_names_the_fallback_when_only_the_entra_independent_path_would_be_lost()
+    {
+        var userId = new UserId("usr-fallback");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Admin",
+            [new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow), new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow, TenantId)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            false)
+        { Username = "operator" });
+        var service = NewService(
+            repo,
+            new StubEntraAssociation(),
+            new AuditRecording(),
+            FakeViability.Scripted(
+                new RecordingGate(),
+                ViabilityTestData.Same([userId.Value], [userId.Value], recoveryHealthy: false),
+                ViabilityTestData.Same([userId.Value], [], recoveryHealthy: false)));
+
+        Func<Task> act = async () =>
+            await service.RemoveIdentityLinkAsync(userId, IdentitySource.Local, "operator", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GovernanceConflictException>()).Which.Code.Should().Be(GovernanceConflictCodes.EntraIndependentFallbackRequired);
+    }
+
+    [Fact]
+    public async Task RemoveIdentityLinkAsync_fails_closed_when_the_configuration_cannot_be_established()
+    {
+        var userId = new UserId("usr-unknown-config");
+        var repo = new InMemoryUserRepository(new User(
+            userId,
+            "Admin",
+            [new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow), new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow, TenantId)],
+            [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
+            false)
+        { Username = "operator" });
+        var untrusted = new ConfigurationTrust(ConfigurationTrustLevel.Unknown, ConfigurationTrustLevel.Trusted, ["LocalAuth:Enabled is missing."]);
+        var audit = new AuditRecording();
+        var service = NewService(
+            repo,
+            new StubEntraAssociation(),
+            audit,
+            FakeViability.Scripted(new RecordingGate(), ViabilityTestData.Same([userId.Value], trust: untrusted)));
+
+        Func<Task> act = async () =>
+            await service.RemoveIdentityLinkAsync(userId, IdentitySource.Local, "operator", CancellationToken.None);
+
+        (await act.Should().ThrowAsync<GovernanceConflictException>()).Which.Code.Should().Be(GovernanceConflictCodes.AdministratorViabilityUnavailable);
+    }
+
+    [Fact]
+    public async Task RemoveIdentityLinkAsync_that_leaves_an_administrator_able_to_sign_in_is_allowed_and_recorded()
     {
         var userId = new UserId("usr-last-admin-proven");
         var repo = new InMemoryUserRepository(new User(
@@ -188,12 +284,58 @@ public sealed class UserManagementServiceIdentityLinkTests
             [new RoleId(BootstrapConstants.PlatformAdminRoleId)],
             false)
         { Username = "operator" });
-        var service = NewService(repo, new StubEntraAssociation(), soleAdmin: true);
+        var audit = new AuditRecording();
+        var service = NewService(
+            repo,
+            new StubEntraAssociation(),
+            audit,
+            // Recovery Access is healthy, so losing the Entra-independent path is allowed (the IAM-3 transition rule), and the proven
+            // Entra link keeps the administrator able to sign in.
+            FakeViability.Scripted(
+                new RecordingGate(),
+                ViabilityTestData.Same([userId.Value], [userId.Value], recoveryHealthy: true),
+                ViabilityTestData.Same([userId.Value], recoveryHealthy: true)));
 
         Func<Task> act = async () =>
             await service.RemoveIdentityLinkAsync(userId, IdentitySource.Local, "operator", CancellationToken.None);
 
         await act.Should().NotThrowAsync();
+        audit.Actions.Should().Equal(AuditActionNames.IdentityLinkRemoved);
+    }
+
+    [Fact]
+    public async Task RemoveIdentityLinkAsync_with_no_such_link_is_a_silent_no_op_that_never_reads_the_viability_state()
+    {
+        var userId = new UserId("usr-no-link");
+        var repo = new InMemoryUserRepository(new User(
+            userId, "Admin", [new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow)], [new RoleId(BootstrapConstants.PlatformAdminRoleId)], false)
+        { Username = "operator" });
+        var audit = new AuditRecording();
+        var reads = new ScriptedViabilityReads(ViabilityTestData.Same([userId.Value]));
+        var service = NewService(repo, null, audit, new AdministratorViabilityCoordinator(new RecordingGate(), reads));
+
+        await service.RemoveIdentityLinkAsync(userId, IdentitySource.Entra, FirstOid, CancellationToken.None);
+
+        audit.Actions.Should().BeEmpty("a request that changes nothing records nothing");
+        reads.Reads.Should().Be(0, "the no-op is decided before the invariants (P-9)");
+    }
+
+    [Fact]
+    public async Task A_busy_gate_is_not_a_refusal_and_writes_no_audit_row()
+    {
+        var userId = new UserId("usr-busy");
+        var repo = new InMemoryUserRepository(new User(
+            userId, "Admin", [new IdentityLink(IdentitySource.Local, "operator", DateTimeOffset.UtcNow), new IdentityLink(IdentitySource.Entra, FirstOid, DateTimeOffset.UtcNow, TenantId)], [], false)
+        { Username = "operator" });
+        var audit = new AuditRecording();
+        var gate = new RecordingGate { Fail = new PlatformAdministratorSetBusyException(PlatformAdministratorSetLockOutcome.TimedOut) };
+        var service = NewService(repo, null, audit, FakeViability.Scripted(gate));
+
+        Func<Task> act = async () =>
+            await service.RemoveIdentityLinkAsync(userId, IdentitySource.Entra, FirstOid, CancellationToken.None);
+
+        await act.Should().ThrowAsync<PlatformAdministratorSetBusyException>();
+        audit.Actions.Should().BeEmpty();
     }
 
     private const string FirstOid = "33333333-3333-3333-3333-333333333333";
@@ -203,8 +345,8 @@ public sealed class UserManagementServiceIdentityLinkTests
     private static UserManagementService NewService(
         InMemoryUserRepository repo,
         IEntraIdentityAssociationService? entraAssociation = null,
-        bool soleAdmin = false,
-        AuditRecording? audit = null)
+        AuditRecording? audit = null,
+        IAdministratorViabilityCoordinator? viability = null)
     {
         audit ??= new AuditRecording();
         return new(
@@ -212,15 +354,15 @@ public sealed class UserManagementServiceIdentityLinkTests
             new StubPrincipalToUserResolver(),
             new AllowUserManageAuth(),
             repo,
-            new StubRoleRepository(soleAdmin ? 1 : 0),
+            new StubRoleRepository(0),
             new InMemoryResourceDescriptorRegistry(),
             new StubLocalCredentialRepository(),
             new StubPasswordHasher(),
             Options.Create(new LocalAuthOptions()),
             entraAssociation,
-            entraAssociation is null ? null : new UsableEntraOptionsMonitor(),
             auditedUnitOfWork: audit,
-            auditEvents: audit);
+            auditEvents: audit,
+            viability: viability ?? FakeViability.Inert());
     }
 
     /// <summary>Stands in for the real association service: pending link with active-registration tenant.</summary>
@@ -240,28 +382,6 @@ public sealed class UserManagementServiceIdentityLinkTests
                 TenantId: TenantId,
                 RegistrationId: "reg-1",
                 LinkedAt: DateTimeOffset.UtcNow));
-    }
-
-    private sealed class UsableEntraOptionsMonitor : IOptionsMonitor<EntraAuthOptions>
-    {
-        public EntraAuthOptions CurrentValue { get; } = new()
-        {
-            Enabled = true,
-            Authority = "https://login.microsoftonline.com/" + TenantId,
-            ClientId = "client-1",
-            ClientSecret = "secret"
-        };
-
-        public EntraAuthOptions Get(string? name) => CurrentValue;
-
-        public IDisposable OnChange(Action<EntraAuthOptions, string?> listener) => new NoopDisposable();
-
-        private sealed class NoopDisposable : IDisposable
-        {
-            public void Dispose()
-            {
-            }
-        }
     }
 
     [Theory]

@@ -150,6 +150,16 @@ public sealed partial class AuditActionCatalogTests
         "governance.authorization.administrator_role_repaired",
     ];
 
+    /// <summary>
+    /// The actions IAM-10.2b adds for the non-destructive authenticator replacement: the W1 record of the replacement and the W3
+    /// refusal of a change that could leave no viable administrator. Both are declared with their producers; no service writes either yet.
+    /// </summary>
+    private static readonly string[] Iam102bAdditions =
+    [
+        "auth.mfa.replaced",
+        "emergency.auth.blocked.administrator_viability",
+    ];
+
     [Fact]
     public void The_catalog_declares_every_action_written_today_exactly_once()
     {
@@ -174,9 +184,11 @@ public sealed partial class AuditActionCatalogTests
         Catalog.Definitions.Where(d => d.IntroducedIn == "SEC-2.3").Select(d => d.Action).Should().BeEquivalentTo(Sec23Additions);
         Catalog.Definitions.Select(d => d.Action).Should().Contain(Iam10Additions);
         Catalog.Definitions.Where(d => d.IntroducedIn == "IAM-10.2a").Select(d => d.Action).Should().BeEquivalentTo(Iam10Additions);
+        Catalog.Definitions.Select(d => d.Action).Should().Contain(Iam102bAdditions);
+        Catalog.Definitions.Where(d => d.IntroducedIn == "IAM-10.2b").Select(d => d.Action).Should().BeEquivalentTo(Iam102bAdditions);
         Catalog.Definitions.Should().HaveCount(
-            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length + Sec22Additions.Length + Sec23Additions.Length + Iam10Additions.Length,
-            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4, SEC-2.1 to SEC-2.3 and IAM-10.2a add only the named ones");
+            147 + Aud12Additions.Length + Aud13Additions.Length + Aud14Additions.Length + Aud14Slice4Additions.Length + Aud14Slice5Additions.Length + Aud14Slice6Additions.Length + Aud14Slice7Additions.Length + Sec21Additions.Length + Sec22Additions.Length + Sec23Additions.Length + Iam10Additions.Length + Iam102bAdditions.Length,
+            "the AUD-1.1 writer inventory at 34b9cd7 found 147 distinct action names, and AUD-1.2 to AUD-1.4, SEC-2.1 to SEC-2.3, IAM-10.2a and IAM-10.2b add only the named ones");
         Catalog.Definitions.Select(d => d.Action).Should().OnlyHaveUniqueItems();
     }
 

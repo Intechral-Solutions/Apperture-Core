@@ -17,6 +17,12 @@ public interface IFirstAdminBootstrapService
     /// <param name="password">Optional. When source is Local, if provided the local credential is created with this password (hashed).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Success with UserId, or AlreadyExists, RoleNotFound, or DuplicateIdentityLink.</returns>
+    /// <exception cref="Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetBusyException">
+    /// Another change to administrator access, or a concurrent first-administrator request, held the serialisation of administrator
+    /// creation past its bound. Transient contention, not a refusal: nothing was written and the request may be repeated. Two
+    /// concurrent requests against an empty installation are decided one after the other, so at most one creates the administrator
+    /// and the other is answered <c>AlreadyExists</c>.
+    /// </exception>
     Task<FirstAdminBootstrapResult> TryCreateFirstAdminAsync(
         string displayName,
         IdentitySource source,

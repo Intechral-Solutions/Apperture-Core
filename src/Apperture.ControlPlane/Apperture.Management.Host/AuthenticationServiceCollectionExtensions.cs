@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Apperture.Management.Host;
@@ -27,7 +29,9 @@ public static class AuthenticationServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<EntraAuthOptions>, EntraAuthOptionsValidator>();
         services.AddSingleton<IValidateOptions<LocalAuthOptions>, LocalAuthOptionsValidator>();
 
+        services.TryAddSingleton<IEntraOptionsBuildHealth, EntraOptionsBuildHealth>();
         services.AddSingleton<IConfigureOptions<OpenIdConnectOptions>, EntraOpenIdConnectOptionsConfigurer>();
+        services.AddSingleton<IRunningEntraHandlerBindingSource, OpenIdConnectHandlerBindingSource>();
         services.AddSingleton<IConfigureOptions<AuthenticationOptions>, EntraAuthenticationOptionsConfigurer>();
         services.AddSingleton<IPostConfigureOptions<CookieAuthenticationOptions>, ManagementCookiePolicyPostConfigure>();
 
@@ -54,8 +58,8 @@ public static class AuthenticationServiceCollectionExtensions
             {
                 // Keep OIDC options valid even before Entra runtime config overlays are applied.
                 options.Authority ??= "https://login.microsoftonline.com/common";
-                options.ClientId ??= "Apperture-Entra-Disabled-Placeholder";
-                options.ClientSecret ??= "Apperture-Entra-Disabled-Placeholder";
+                options.ClientId ??= EntraOpenIdConnectOptionsConfigurer.DisabledPlaceholder;
+                options.ClientSecret ??= EntraOpenIdConnectOptionsConfigurer.DisabledPlaceholder;
                 if (!options.CallbackPath.HasValue)
                     options.CallbackPath = "/signin-oidc";
                 if (!options.SignedOutCallbackPath.HasValue)

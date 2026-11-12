@@ -99,6 +99,42 @@ public sealed class BootstrapControllerTests
         result.Result.Should().BeOfType<ConflictObjectResult>();
     }
 
+    [Fact]
+    public async Task CreateFirstAdmin_when_another_change_holds_the_gate_returns_a_neutral_retryable_conflict_that_is_not_already_initialized_and_records_nothing()
+    {
+        var audit = new AuditRecording();
+        var busy = new Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetBusyException(
+            Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetLockOutcome.TimedOut);
+        var controller = NewController(
+            new StubBootstrapService(BootstrapSetupStatus.FromUserCount(0), failure: busy),
+            audit);
+
+        var result = await controller.CreateFirstAdmin(new FirstAdminRequest("Admin", "Local", "admin", "Password1!"), CancellationToken.None);
+
+        var conflict = result.Result.Should().BeOfType<ConflictObjectResult>().Subject;
+        var body = conflict.Value.Should().BeOfType<BootstrapErrorResponse>().Subject;
+        body.Code.Should().Be(BootstrapErrorCodes.Busy).And.NotBe(BootstrapErrorCodes.AlreadyInitialized);
+        body.Initialized.Should().BeFalse("contention says nothing about whether the installation is set up");
+        body.Message.Should().NotContainEquivalentOf("administrator", "an anonymous caller learns nothing about changes to administrator access")
+            .And.NotContainEquivalentOf("gate").And.NotContainEquivalentOf("lock");
+        audit.Events.Should().BeEmpty("contention changed nothing and is not a refusal of the request");
+    }
+
+    [Fact]
+    public async Task CreateFirstAdmin_does_not_present_a_failed_gate_or_a_cancellation_as_a_business_outcome()
+    {
+        var failed = NewController(new StubBootstrapService(
+            BootstrapSetupStatus.FromUserCount(0),
+            failure: new Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetGateException(-999)));
+        var cancelled = NewController(new StubBootstrapService(BootstrapSetupStatus.FromUserCount(0), failure: new OperationCanceledException()));
+
+        var gateFailure = async () => await failed.CreateFirstAdmin(new FirstAdminRequest("Admin", "Local", "admin", "Password1!"), CancellationToken.None);
+        var cancellation = async () => await cancelled.CreateFirstAdmin(new FirstAdminRequest("Admin", "Local", "admin", "Password1!"), CancellationToken.None);
+
+        await gateFailure.Should().ThrowAsync<Apperture.Core.Application.AdministratorViability.PlatformAdministratorSetGateException>("a lock call that failed is an internal failure");
+        await cancellation.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     private static BootstrapController NewController(
         IFirstAdminBootstrapService bootstrap,
         AuditRecording? audit = null) =>
@@ -108,11 +144,13 @@ public sealed class BootstrapControllerTests
     {
         private readonly BootstrapSetupStatus _status;
         private readonly FirstAdminBootstrapResult? _createResult;
+        private readonly Exception? _failure;
 
-        public StubBootstrapService(BootstrapSetupStatus status, FirstAdminBootstrapResult? createResult = null)
+        public StubBootstrapService(BootstrapSetupStatus status, FirstAdminBootstrapResult? createResult = null, Exception? failure = null)
         {
             _status = status;
             _createResult = createResult;
+            _failure = failure;
         }
 
         public Task<BootstrapSetupStatus> GetSetupStatusAsync(CancellationToken cancellationToken = default) =>
@@ -124,6 +162,8 @@ public sealed class BootstrapControllerTests
             string externalId,
             string? password = null,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(_createResult ?? FirstAdminBootstrapResult.AlreadyExists);
+            _failure is null
+                ? Task.FromResult(_createResult ?? FirstAdminBootstrapResult.AlreadyExists)
+                : Task.FromException<FirstAdminBootstrapResult>(_failure);
     }
 }

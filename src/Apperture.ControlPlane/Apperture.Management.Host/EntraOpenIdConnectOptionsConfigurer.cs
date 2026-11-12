@@ -27,11 +27,16 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
 {
     private readonly IOptionsMonitor<EntraAuthOptions> _entra;
     private readonly IConfiguration _configuration;
+    private readonly IEntraOptionsBuildHealth? _health;
 
-    public EntraOpenIdConnectOptionsConfigurer(IOptionsMonitor<EntraAuthOptions> entra, IConfiguration configuration)
+    public EntraOpenIdConnectOptionsConfigurer(
+        IOptionsMonitor<EntraAuthOptions> entra,
+        IConfiguration configuration,
+        IEntraOptionsBuildHealth? health = null)
     {
         _entra = entra;
         _configuration = configuration;
+        _health = health;
     }
 
     public void Configure(string? name, OpenIdConnectOptions options)
@@ -40,6 +45,14 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
             return;
 
         var e = _entra.CurrentValue;
+
+        // The handler holds what it was built from. If those Entra options were built while the registration or its secret could
+        // not be read, say so against the handler's options too (R-1): the framework keeps them until it rebuilds them.
+        _health?.Carry(e, options);
+
+        // The handler's options exist from here on: real traffic has reached the host. The attestation reads this mark instead of
+        // asking for the options, which would build them.
+        _health?.NoteOpenIdConnectOptionsBuilt();
         if (!EntraRuntimeState.IsUsable(e))
         {
             // The OIDC scheme is always registered so it can be activated consistently (e.g. DB overlay + restart).
@@ -548,14 +561,20 @@ internal sealed class EntraOpenIdConnectOptionsConfigurer : IConfigureNamedOptio
     public void Configure(OpenIdConnectOptions options) => Configure(Options.DefaultName, options);
 
     /// <summary>
+    /// The client id and secret a handler holds while Entra is off. The running-handler reader recognizes a disabled handler by it,
+    /// so a placeholder is never read as a usable sign-in path.
+    /// </summary>
+    internal const string DisabledPlaceholder = "Apperture-Entra-Disabled-Placeholder";
+
+    /// <summary>
     /// Values are never used for production sign-in while <see cref="EntraAuthOptions.Enabled"/> is false
     /// (the host /signin endpoint and default challenge scheme avoid OIDC). They exist only to satisfy framework validation.
     /// </summary>
     private static void ApplyDisabledEntraPlaceholders(OpenIdConnectOptions options)
     {
         options.Authority = "https://login.microsoftonline.com/common";
-        options.ClientId = "Apperture-Entra-Disabled-Placeholder";
-        options.ClientSecret = "Apperture-Entra-Disabled-Placeholder";
+        options.ClientId = DisabledPlaceholder;
+        options.ClientSecret = DisabledPlaceholder;
         options.CallbackPath = "/signin-oidc";
         options.SignedOutCallbackPath = EntraSignOut.SignedOutCallbackPath;
         options.ResponseType = "code";

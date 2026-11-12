@@ -106,7 +106,8 @@ internal static class AuditRecorderTestSupport
             invitations: invitations,
             actionTokens: actionTokens,
             auditedUnitOfWork: unit,
-            auditEvents: events);
+            auditEvents: events,
+            viability: RoleAuthorityWorld.Viability(db));
 
     /// <summary>A signed-in person. The display name stands for a session claim the recorder must never trust.</summary>
     public sealed class Principal(string userId, string staleSessionName = "stale.session.name") : IPrincipalContext

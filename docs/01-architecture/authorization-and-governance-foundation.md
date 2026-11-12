@@ -139,7 +139,7 @@ Definition-level permissions must remain coherent with the grantable catalog. If
 - **Role** — Id, Name, Permissions (PermissionDescriptor list)
 - **Permission** — Action, Resource, ModuleId
 - **PermissionDescriptor** — Action, optional ResourceDescriptor
-- **IRoleProvider** — GetRoles, GetRolesForUserAsync, Assign/Remove
+- **IRoleProvider** — GetRolesAsync, GetRoleAsync, GetRolesForUserAsync. Read-only: role assignments change only through the audited user-management and provisioning units. Its former `AssignRoleToUserAsync` and `RemoveRoleFromUserAsync` were removed (2026-11-10) because nothing called them and they wrote without the audited unit, the administrator-viability gate or an audit row.
 
 ### Governed Resource Vocabulary
 

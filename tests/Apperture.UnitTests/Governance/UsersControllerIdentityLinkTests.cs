@@ -1,4 +1,5 @@
 using Apperture.ControlPlane.Security;
+using Apperture.Core.Application.AdministratorViability;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
 using Apperture.Core.Domain.Identity;
@@ -238,6 +239,92 @@ public sealed class UsersControllerIdentityLinkTests
         body.Code.Should().Be(StrongAuthenticationErrorCodes.NotConfigured);
     }
 
+    // ---- IAM-10.2b: the viability refusals are typed 409s, for a Local and an Entra link alike, never an unhandled exception ----
+
+    public static IEnumerable<object[]> ViabilityRefusals()
+    {
+        yield return new object[] { new GovernanceConflictException(GovernanceConflictCodes.LastViableSignInMethod, "m"), "last_viable_sign_in_method", false };
+        yield return new object[] { new GovernanceConflictException(GovernanceConflictCodes.EntraIndependentFallbackRequired, "m"), "entra_independent_fallback_required", false };
+        yield return new object[] { new GovernanceConflictException(GovernanceConflictCodes.AdministratorViabilityUnavailable, "m"), "administrator_viability_unavailable", false };
+        yield return new object[] { new PlatformAdministratorSetBusyException(PlatformAdministratorSetLockOutcome.TimedOut), "governance_operation_busy", true };
+    }
+
+    [Theory]
+    [MemberData(nameof(ViabilityRefusals))]
+    public async Task RemoveIdentityLink_maps_the_viability_refusals_to_409_for_both_sources(Exception thrown, string code, bool retry)
+    {
+        foreach (var source in new[] { "Local", "Entra" })
+        {
+            var controller = NewController(new StubUserManagement(throwOnRemoveLink: thrown));
+
+            var result = await controller.RemoveIdentityLink(TargetUserId, source, source == "Local" ? "operator" : EntraOid, CancellationToken.None);
+
+            var conflict = result.Should().BeOfType<ConflictObjectResult>($"{source} link removal").Subject;
+            var json = System.Text.Json.JsonSerializer.SerializeToElement(conflict.Value);
+            json.GetProperty("code").GetString().Should().Be(code);
+            json.GetProperty("message").GetString().Should().NotBeNullOrWhiteSpace();
+            json.TryGetProperty("retry", out var retryProperty).Should().Be(retry);
+            if (retry)
+                retryProperty.GetBoolean().Should().BeTrue();
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ViabilityRefusals))]
+    public async Task SetLocalCredentialDisabled_maps_the_viability_refusals_to_409(Exception thrown, string code, bool retry)
+    {
+        var controller = NewController(new StubUserManagement(throwOnDisable: thrown));
+
+        var result = await controller.SetLocalCredentialDisabled(TargetUserId, new SetLocalCredentialDisabledRequest(true), CancellationToken.None);
+
+        var conflict = result.Should().BeOfType<ConflictObjectResult>().Subject;
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(conflict.Value);
+        json.GetProperty("code").GetString().Should().Be(code);
+        json.TryGetProperty("retry", out _).Should().Be(retry);
+    }
+
+    [Fact]
+    public async Task An_internal_audit_failure_is_not_mapped_to_a_client_error_by_the_link_and_credential_endpoints()
+    {
+        var removal = NewController(new StubUserManagement(throwOnRemoveLink: new Apperture.Core.Application.Audit.AuditInvariantException("defect")));
+        var disable = NewController(new StubUserManagement(throwOnDisable: new Apperture.Core.Application.Audit.AuditInvariantException("defect")));
+
+        var removeLink = () => removal.RemoveIdentityLink(TargetUserId, "Local", "operator", CancellationToken.None);
+        var disableCredential = () => disable.SetLocalCredentialDisabled(TargetUserId, new SetLocalCredentialDisabledRequest(true), CancellationToken.None);
+
+        await removeLink.Should().ThrowAsync<Apperture.Core.Application.Audit.AuditInvariantException>("it reaches the host's handler as the internal error it is");
+        await disableCredential.Should().ThrowAsync<Apperture.Core.Application.Audit.AuditInvariantException>();
+    }
+
+    // IAM-10.2b WP5 (pre-hand-over review C4): setting a password became a governance endpoint with SI-1, and its catch of
+    // InvalidOperationException mapped an audit invariant failure to 400, or to 404 by message. It now lets it through as the credential
+    // endpoint does, while an ordinary not-found and an invalid request keep their 404 and 400.
+    [Fact]
+    public async Task An_internal_audit_failure_is_not_mapped_to_a_client_error_by_the_password_endpoint()
+    {
+        var request = new SetPasswordRequest("quiet-maple-lantern-harbor");
+        var defect = NewController(new StubUserManagement { ThrowOnSetPassword = new Apperture.Core.Application.Audit.AuditInvariantException("the audit row was not found") });
+        var missing = NewController(new StubUserManagement { ThrowOnSetPassword = new InvalidOperationException("User not found.") });
+        var invalid = NewController(new StubUserManagement { ThrowOnSetPassword = new InvalidOperationException("The password is too short.") });
+
+        var setWithDefect = () => defect.SetLocalPassword(TargetUserId, request, CancellationToken.None);
+
+        await setWithDefect.Should().ThrowAsync<Apperture.Core.Application.Audit.AuditInvariantException>(
+            "it reaches the host's handler as the internal error it is, even when its message says 'not found'");
+        (await missing.SetLocalPassword(TargetUserId, request, CancellationToken.None)).Should().BeOfType<NotFoundObjectResult>();
+        (await invalid.SetLocalPassword(TargetUserId, request, CancellationToken.None)).Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task A_gate_failure_that_is_not_contention_is_not_presented_as_a_retry()
+    {
+        var controller = NewController(new StubUserManagement(throwOnRemoveLink: new PlatformAdministratorSetGateException(-999)));
+
+        var act = () => controller.RemoveIdentityLink(TargetUserId, "Local", "operator", CancellationToken.None);
+
+        await act.Should().ThrowAsync<PlatformAdministratorSetGateException>("an unexpected lock result is an internal failure, not a 409 with a retry hint");
+    }
+
     private static UsersController NewController(StubUserManagement service) =>
         new(service, new StubLocalCredentialRepository(), new StubRoleProvider([]));
 
@@ -245,13 +332,15 @@ public sealed class UsersControllerIdentityLinkTests
     {
         private readonly Exception? _throwOnAdd;
         private readonly Exception? _throwOnDisable;
+        private readonly Exception? _throwOnRemoveLink;
         private readonly bool _duplicateSameUser;
 
-        public StubUserManagement(Exception? throwOnAdd = null, bool duplicateSameUser = false, Exception? throwOnDisable = null)
+        public StubUserManagement(Exception? throwOnAdd = null, bool duplicateSameUser = false, Exception? throwOnDisable = null, Exception? throwOnRemoveLink = null)
         {
             _throwOnAdd = throwOnAdd;
             _duplicateSameUser = duplicateSameUser;
             _throwOnDisable = throwOnDisable;
+            _throwOnRemoveLink = throwOnRemoveLink;
         }
 
         public List<(UserId UserId, IdentitySource Source, string? ExternalId)> AddCalls { get; } = [];
@@ -295,7 +384,7 @@ public sealed class UsersControllerIdentityLinkTests
             throw new NotImplementedException();
 
         public ValueTask RemoveIdentityLinkAsync(UserId userId, IdentitySource source, string externalId, CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
+            throw (_throwOnRemoveLink ?? new NotImplementedException());
 
         public ValueTask AssignRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
@@ -303,8 +392,11 @@ public sealed class UsersControllerIdentityLinkTests
         public ValueTask RemoveRoleAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
             throw new NotImplementedException();
 
+        /// <summary>What setting a password throws (IAM-10.2b WP5); nothing set means the call was not expected.</summary>
+        public Exception? ThrowOnSetPassword { get; init; }
+
         public ValueTask SetLocalPasswordAsync(UserId userId, string newPassword, CancellationToken cancellationToken = default) =>
-            throw new NotImplementedException();
+            throw ThrowOnSetPassword ?? new NotImplementedException();
 
         public ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
         {
@@ -342,11 +434,5 @@ public sealed class UsersControllerIdentityLinkTests
 
         public ValueTask<IReadOnlyList<Role>> GetRolesForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(_roles);
-
-        public ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
-
-        public ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
     }
 }

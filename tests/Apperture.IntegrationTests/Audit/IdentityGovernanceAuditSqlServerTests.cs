@@ -120,6 +120,8 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     {
         var (admin, _) = await AddUserAsync("admin");
         await _db.ExecuteAsync($"INSERT INTO UserRoles (UserId, RoleId) VALUES (N'{admin}', N'{PlatformAdmin}');");
+        // IAM-10.2b: the refusal protects the last administrator who can sign in, so this one has a working Local credential.
+        await _db.ExecuteAsync($"INSERT INTO LocalCredentials (UserId, PasswordHash, Salt, Algorithm, IsDisabled) VALUES (N'{admin}', N'hash', N'salt', N'test', 0);");
         var principal = new Principal(admin);
 
         await using (var db = _db.NewDb())
@@ -275,7 +277,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         {
             var totp = new SqlNativeTotpCredentialRepository(db);
             await totp.UpsertPendingAsync(userId, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
-            await totp.MarkEnrolledAsync(userId, 1, DateTimeOffset.UtcNow);
+            (await totp.MarkEnrolledAsync(userId, (await totp.GetByUserIdAsync(userId))!.CredentialId, 1, DateTimeOffset.UtcNow)).Should().BeTrue();
         }
 
         var lost = new LostCommitAcknowledgement();
@@ -341,7 +343,8 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             Principals = { new BootstrapPlatformAdminPrincipalOptions { IdentitySource = "Local", ExternalId = "configured.admin" } },
         };
         Task ApplyAsync(AppertureDbContext db) => BootstrapPlatformAdminAssignment.ExecuteAsync(
-            options, new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance), new SqlRoleRepository(db), null, NewUnit(db, null));
+            options, new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance), new SqlRoleRepository(db), null, NewUnit(db, null),
+            RoleAuthorityWorld.Viability(db));
 
         var failAudit = new FailingCommand(sql => sql.Contains("INSERT INTO [AuditLogs]", StringComparison.Ordinal));
         await using (var db = _db.NewDb(failAudit))
@@ -379,7 +382,8 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             new SqlRoleRepository(db),
             new SqlLocalCredentialRepository(db),
             new LocalPasswordHasher(),
-            NewUnit(db, null));
+            NewUnit(db, null),
+            RoleAuthorityWorld.Viability(db));
 
     // ---- M6 per service (gate §22 AUD-1.2): the remaining audit-failure and lost-acknowledgement paths ----
 
@@ -410,6 +414,9 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     [Fact]
     public async Task Revoking_Recovery_Access_after_a_lost_acknowledgement_is_reported_done_with_one_row()
     {
+        // Strict revocation (C-13-R) stands only while another ordinary administrator can sign in without Microsoft.
+        var (fallback, _) = await AddAdministratorAsync();
+        await _db.ExecuteAsync($"INSERT INTO LocalCredentials (UserId, PasswordHash, Salt, Algorithm, IsDisabled) VALUES (N'{fallback}', N'hash', N'salt', N'test', 0);");
         UserId recovery;
         await using (var db = _db.NewDb())
             recovery = await Emergency(db).ProvisionAsync("quiet-maple-lantern-harbor", actorId: null);
@@ -433,7 +440,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         {
             var totp = new SqlNativeTotpCredentialRepository(db);
             await totp.UpsertPendingAsync(userId, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
-            await totp.MarkEnrolledAsync(userId, 1, DateTimeOffset.UtcNow);
+            (await totp.MarkEnrolledAsync(userId, (await totp.GetByUserIdAsync(userId))!.CredentialId, 1, DateTimeOffset.UtcNow)).Should().BeTrue();
         }
 
         var before = await _db.ScalarAsync<int>($"SELECT COUNT(*) FROM UserMfaRecoveryCodes WHERE UserId = N'{user}';");
@@ -542,7 +549,11 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
     private SqlAuditEventWriter Events(IPrincipalContext principal) =>
         new(_db.Options(), principal, HarnessCatalog, null, null, null);
 
-    private static EmergencyAccessService Emergency(AppertureDbContext db) =>
+    /// <summary>
+    /// The Recovery Access service with the gate and the viability reads it decides under (IAM-10.2b WP4B-C): Local sign-in trusted,
+    /// as the host reads it, and the refusal writer it records a refused designation or revocation with.
+    /// </summary>
+    private EmergencyAccessService Emergency(AppertureDbContext db) =>
         new(
             new SqlUserRepository(db, NullLogger<SqlUserRepository>.Instance),
             new SqlRoleRepository(db),
@@ -551,17 +562,13 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             new NoMfa(),
             TimeProvider.System,
             NullLogger<EmergencyAccessService>.Instance,
-            NewUnit(db, null));
+            NewUnit(db, null),
+            RoleAuthorityWorld.Viability(db),
+            new SqlAuditEventWriter(_db.Options(), null, HarnessCatalog, null, null, null));
 
-    private static NativeMfaService Mfa(AppertureDbContext db) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            new IdentityProtector(),
-            TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            NewUnit(db, null));
+    /// <summary>The production service (IAM-10.2b WP4B-C): a regeneration of the codes takes the global gate and asserts it only added.</summary>
+    private NativeMfaService Mfa(AppertureDbContext db) =>
+        NativeMfaComposition.Over(db, _db.Options(), new IdentityProtector());
 
     /// <summary>The recovery service resolves its repositories and unit from a scope, as the host does.</summary>
     private RealBootstrapRecoveryService Recovery(AppertureDbContext db)
@@ -571,6 +578,7 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
             .AddSingleton<IRoleRepository>(new SqlRoleRepository(db))
             .AddSingleton<IAuditedUnitOfWork>(NewUnit(db, null))
             .AddSingleton<IAuditEventWriter>(new SqlAuditEventWriter(_db.Options(), null, HarnessCatalog, null, null, null))
+            .AddSingleton<Apperture.ControlPlane.Security.AdministratorViability.IAdministratorViabilityCoordinator>(RoleAuthorityWorld.Viability(db))
             .BuildServiceProvider();
         return new RealBootstrapRecoveryService(new AuthorizedRecovery(), new NoBootstrapAudit(), services.GetRequiredService<IServiceScopeFactory>());
     }
@@ -606,6 +614,10 @@ public sealed class IdentityGovernanceAuditSqlServerTests : IAsyncLifetime
         public ValueTask<IReadOnlyList<string>> RegenerateRecoveryCodesAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask ResetAsync(UserId userId, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<int> CountUnusedRecoveryCodesAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult(0);
+        public ValueTask<NativeMfaReplacementChallenge> BeginReplacementAsync(UserId userId, string accountName, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<NativeMfaReplacementVerification> VerifyReplacementAsync(UserId userId, string candidateId, int version, string totpCode, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<NativeMfaReplacementResult> CompleteReplacementAsync(UserId userId, string candidateId, int version, AuditActor actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask<bool> AbandonReplacementAsync(UserId userId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class AuthorizedRecovery : Apperture.Bootstrap.IBootstrapRecoveryAuthorizer

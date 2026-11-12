@@ -1,5 +1,6 @@
 using Apperture.ControlPlane.Security;
 using Apperture.Core.Application;
+using Apperture.UnitTests.AdministratorViability;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Apperture.Core.Domain.Governance;
@@ -309,7 +310,8 @@ public sealed class UserManagementServiceCreateUserTests
                 Hasher,
                 Options.Create(new LocalAuthOptions { MinPasswordLength = 8 }),
                 auditedUnitOfWork: Audit,
-                auditEvents: Audit);
+                auditEvents: Audit,
+                viability: FakeViability.Inert());
         }
 
         public static Harness Create(bool allowUserManage = true, bool allowRoleAssign = true) =>

@@ -58,6 +58,7 @@ public class AppertureDbContext : DbContext
     public DbSet<LocalCredentialEntity> LocalCredentials => Set<LocalCredentialEntity>();
     public DbSet<UserTotpCredentialEntity> UserTotpCredentials => Set<UserTotpCredentialEntity>();
     public DbSet<UserMfaRecoveryCodeEntity> UserMfaRecoveryCodes => Set<UserMfaRecoveryCodeEntity>();
+    public DbSet<UserTotpReplacementCandidateEntity> UserTotpReplacementCandidates => Set<UserTotpReplacementCandidateEntity>();
     public DbSet<AccountActionTokenEntity> AccountActionTokens => Set<AccountActionTokenEntity>();
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
     public DbSet<UserProfileImageEntity> UserProfileImages => Set<UserProfileImageEntity>();
@@ -70,6 +71,7 @@ public class AppertureDbContext : DbContext
     public DbSet<InstanceAuthUiPolicyEntity> InstanceAuthUiPolicies => Set<InstanceAuthUiPolicyEntity>();
     public DbSet<EntraInstanceRegistrationEntity> EntraInstanceRegistrations => Set<EntraInstanceRegistrationEntity>();
     public DbSet<EntraRegistrationDiagnosticsEntity> EntraRegistrationDiagnostics => Set<EntraRegistrationDiagnosticsEntity>();
+    public DbSet<HostConfigurationAttestationEntity> HostConfigurationAttestations => Set<HostConfigurationAttestationEntity>();
     public DbSet<EntraAccessRequestEntity> EntraAccessRequests => Set<EntraAccessRequestEntity>();
     public DbSet<PlatformSettingValueEntity> PlatformSettingValues => Set<PlatformSettingValueEntity>();
     public DbSet<AttentionIncidentEntity> AttentionIncidents => Set<AttentionIncidentEntity>();
@@ -870,8 +872,29 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.UserId).HasMaxLength(64);
             e.Property(x => x.ProtectedSecret).IsRequired();
             e.Property(x => x.ProtectorKeyId).IsRequired().HasMaxLength(128);
+            e.Property(x => x.CredentialId).IsRequired().HasMaxLength(64);
             e.Property(x => x.RowVersion).IsRowVersion();
             e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserTotpReplacementCandidateEntity>(e =>
+        {
+            e.ToTable("UserTotpReplacementCandidates");
+            e.HasKey(x => x.CandidateId);
+            e.Property(x => x.CandidateId).HasMaxLength(64);
+            e.Property(x => x.UserId).IsRequired().HasMaxLength(64);
+            e.Property(x => x.ProtectedSecret).IsRequired();
+            e.Property(x => x.ProtectorKeyId).IsRequired().HasMaxLength(128);
+            e.Property(x => x.StagedAgainstCredentialId).IsRequired().HasMaxLength(64);
+            e.Property(x => x.CreatedUtc).HasColumnType("datetime2");
+            e.Property(x => x.ExpiresAtUtc).HasColumnType("datetime2");
+            e.Property(x => x.VerifiedUtc).HasColumnType("datetime2");
+            // At most one live (staged or verified) candidate per user; superseded and consumed rows are history awaiting the next stage's purge.
+            e.HasIndex(x => x.UserId).IsUnique().HasFilter("[Status] < 2").HasDatabaseName("UX_UserTotpReplacementCandidates_Live");
+            // Every candidate of a user, history included: a user-scoped delete or purge seeks here instead of scanning (and locking)
+            // other users' rows. Named, because the filtered index above is on the same column.
+            e.HasIndex(x => x.UserId, "IX_UserTotpReplacementCandidates_UserId");
+            e.HasOne<UserEntity>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<UserMfaRecoveryCodeEntity>(e =>
@@ -1022,6 +1045,18 @@ public class AppertureDbContext : DbContext
             e.Property(x => x.LastOpenIdValidationDetail).HasMaxLength(4000);
             e.Property(x => x.LastDirectoryDiscoverySummary).HasMaxLength(512);
             e.Property(x => x.LastDirectoryDiscoveryDetail).HasMaxLength(4000);
+        });
+
+        // The Management Host's dated reading of its own sign-in configuration, for the emergency command line (one row per host).
+        // Written only by SqlHostConfigurationAttestationStore, with SQL that stamps the times from the database's clock.
+        modelBuilder.Entity<HostConfigurationAttestationEntity>(e =>
+        {
+            e.ToTable("HostConfigurationAttestations");
+            e.HasKey(x => x.HostId);
+            e.Property(x => x.HostId).HasMaxLength(64);
+            e.Property(x => x.Source).HasMaxLength(32);
+            e.Property(x => x.ProcessInstanceId).HasMaxLength(64);
+            e.Property(x => x.DatabaseFingerprint).HasMaxLength(64);
         });
 
         modelBuilder.Entity<EntraAccessRequestEntity>(e =>

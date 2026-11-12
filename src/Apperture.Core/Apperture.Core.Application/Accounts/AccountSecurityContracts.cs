@@ -141,6 +141,9 @@ public static class AccountSecurityErrorCodes
     public const string InvitationRequired = "account.invitation.required";
     public const string PasswordRequired = "account.password.required";
     public const string SmtpNotConfigured = "account.security_mail.not_configured";
+
+    /// <summary>The account was designated or revoked as Recovery Access between a read and the write that depended on it; the request may be repeated.</summary>
+    public const string StaleUpdate = "account.update.stale";
 }
 
 public sealed class AccountSecurityException : Exception

@@ -34,6 +34,29 @@ internal static class AuditIsolation
         return scratch;
     }
 
+    /// <summary>
+    /// As <see cref="CreateAsync"/>, migrated only as far as <paramref name="migrationId"/> ("0" for none): the state of a new installation
+    /// or of an installation before an upgrade, for a case that starts the real host and lets it migrate.
+    /// </summary>
+    public static async Task<AuditSqlScratch> CreateAtMigrationAsync(string prefix, bool rcsi, string migrationId)
+    {
+        var scratch = await AuditSqlScratch.CreateAtMigrationAsync(prefix + (rcsi ? "B_" : "A_"), migrationId);
+        if (!rcsi)
+            return scratch;
+
+        await using (var connection = new SqlConnection(new SqlConnectionStringBuilder(scratch.ConnectionString) { InitialCatalog = "master" }.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"ALTER DATABASE [{scratch.Catalog}] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        SqlConnection.ClearPool(new SqlConnection(scratch.ConnectionString));
+        (await scratch.ScalarAsync<bool>(RcsiQuery(scratch))).Should().BeTrue("the catalog must really run under row versioning");
+        return scratch;
+    }
+
     private static string RcsiQuery(AuditSqlScratch scratch) =>
         $"SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name = N'{scratch.Catalog}';";
 }

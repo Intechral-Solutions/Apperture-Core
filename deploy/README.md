@@ -182,4 +182,17 @@ Sign-in sessions are identified by the user's internal id. Sessions created by a
 
   Fresh Microsoft sign-in keeps working. Recovery Access and multi-factor sign-in keep working, because their secrets are not protected by this key ring. Upgrading again later signs everyone out once more.
 
+### Authenticator records after upgrading
+
+This version gives every stored authenticator (TOTP) secret its own identity, and adds a table for replacement authenticators that are waiting to be confirmed. The upgrade assigns an identity to every existing authenticator, pending or enrolled. It changes no secret, recovery code, last-used code step or enrollment state.
+
+There is no supported production upgrade or rollback procedure yet (see the RC1 note at the top). Whatever procedure is used must respect these constraints:
+
+- **Rolling back only the program is not supported.** An earlier version does not know the identity column. The database refuses its first new authenticator enrollment, because a required value is missing. The failure is loud and changes nothing. An earlier version also ignores replacements that are waiting to be confirmed, and its writes do not keep the identity current. This version relies on the identity to tell one secret from another when it accepts a code.
+- **Backup:** back up the database before the new Management Host starts for the first time. This is the same backup that "Who-did-what history after upgrading" requires.
+- **Before you start an earlier version,** stop every host of this version. Then take one of these two routes:
+  1. **Restore the pre-upgrade backup.** This is the full rollback described above. Authenticators enrolled, replaced or reset and recovery codes issued after the upgrade are lost, and the affected users must enroll again. Before restoring, back up the current database, so that nothing done since the upgrade is destroyed beyond recovery.
+  2. **Downgrade the schema.** Revert this version's migration with the migration tooling (target `20261029120000_Iam102b_HostConfigurationAttestation`). This removes the identity column and the replacement table. Every authenticator, recovery code and enrollment flag is kept, and any replacement still waiting to be confirmed is discarded. Back up the database first. This route covers the authenticator records only: it does not reverse the who-did-what rewrite or invalidate sign-in sessions. A full rollback still needs the steps in those sections.
+- **Upgrading again after a rollback:** take a fresh backup first. The upgrade assigns new identities, so a replacement that was waiting to be confirmed before the rollback cannot complete and must be started again.
+
 See [docs/00-overview/roadmap.md](../docs/00-overview/roadmap.md).

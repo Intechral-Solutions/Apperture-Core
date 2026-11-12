@@ -100,7 +100,7 @@ public sealed class AccountProfileService : IAccountProfileService
                 }
 
                 var changed = user with { DisplayName = normalized };
-                await _users.UpdateAsync(changed, ct).ConfigureAwait(false);
+                await UpdateUserAsync(changed, restricted: true, ct).ConfigureAwait(false);
                 await transaction.StageAsync(AuditEvents.DisplayNameUpdated(userId, user.DisplayName, normalized), ct).ConfigureAwait(false);
                 return changed;
             },
@@ -140,14 +140,23 @@ public sealed class AccountProfileService : IAccountProfileService
         var timeZoneId = NormalizeTimeZoneOrThrow(update.DisplayTimeZoneId);
 
         var user = await RequireUserAsync(userId, cancellationToken).ConfigureAwait(false);
-        await _preferences
-            .UpsertAsync(userId, new UserPreferences(appearance, timeFormat), cancellationToken)
-            .ConfigureAwait(false);
+        var preferences = new UserPreferences(appearance, timeFormat);
 
-        if (!string.Equals(user.DisplayTimeZoneId, timeZoneId, StringComparison.Ordinal))
+        // One request, one transaction: the appearance and clock format are written together with the time zone, and the time zone is
+        // written first. If the account's designation changed since it was read, nothing is written and the request is refused as
+        // stale; a failure of either write undoes the other. (Previously the preferences committed before the user update could fail.)
+        if (string.Equals(user.DisplayTimeZoneId, timeZoneId, StringComparison.Ordinal))
         {
-            await _users
-                .UpdateAsync(user with { DisplayTimeZoneId = timeZoneId }, cancellationToken)
+            await _preferences.UpsertAsync(userId, preferences, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await _preferences
+                .UpsertAfterAsync(
+                    userId,
+                    preferences,
+                    ct => UpdateUserAsync(user with { DisplayTimeZoneId = timeZoneId }, restricted: false, ct),
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -178,7 +187,7 @@ public sealed class AccountProfileService : IAccountProfileService
                 EnsureMutable(user);
                 var avatarChanged = user.Avatar != avatar;
                 if (avatarChanged)
-                    await _users.UpdateAsync(user with { Avatar = avatar }, ct).ConfigureAwait(false);
+                    await UpdateUserAsync(user with { Avatar = avatar }, restricted: true, ct).ConfigureAwait(false);
 
                 // Selecting artwork retires any photo the operator had uploaded, so the image does not linger.
                 var retired = await _images.DeleteForUserAsync(userId.Value, keepImageKey: null, ct).ConfigureAwait(false);
@@ -234,7 +243,7 @@ public sealed class AccountProfileService : IAccountProfileService
                 var target = await RequireUserAsync(userId, ct).ConfigureAwait(false);
                 EnsureMutable(target);
                 await _images.SaveAsync(userId.Value, imageKey, normalized.Renditions, ct).ConfigureAwait(false);
-                await _users.UpdateAsync(target with { Avatar = avatar }, ct).ConfigureAwait(false);
+                await UpdateUserAsync(target with { Avatar = avatar }, restricted: true, ct).ConfigureAwait(false);
 
                 // The new image, the user row pointing at it and the retirement of every other image commit together.
                 var deleted = await _images.DeleteForUserAsync(userId.Value, keepImageKey: imageKey, ct).ConfigureAwait(false);
@@ -266,7 +275,7 @@ public sealed class AccountProfileService : IAccountProfileService
                 EnsureMutable(user);
                 var avatarChanged = user.EffectiveAvatar != UserAvatar.Default;
                 if (avatarChanged)
-                    await _users.UpdateAsync(user with { Avatar = UserAvatar.Default }, ct).ConfigureAwait(false);
+                    await UpdateUserAsync(user with { Avatar = UserAvatar.Default }, restricted: true, ct).ConfigureAwait(false);
                 var retired = await _images.DeleteForUserAsync(userId.Value, keepImageKey: null, ct).ConfigureAwait(false);
 
                 // Already the default with nothing stored: the same response, and no row (D7).
@@ -476,13 +485,38 @@ public sealed class AccountProfileService : IAccountProfileService
         await _users.GetByIdAsync(userId, cancellationToken).ConfigureAwait(false)
         ?? throw new KeyNotFoundException($"User '{userId.Value}' was not found.");
 
+    /// <summary>
+    /// The user write of every change here: the repository checks the stored designation under a row lock in this transaction. For
+    /// a change Recovery Access may not make (<paramref name="restricted"/>), an account designated since the check is refused
+    /// with the refusal that account already has. Otherwise, and for an account revoked since, the change is refused as stale, to be
+    /// repeated. Nothing is written in either case.
+    /// </summary>
+    private async ValueTask UpdateUserAsync(User user, bool restricted, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _users.UpdateAsync(user, cancellationToken).ConfigureAwait(false);
+        }
+        catch (UserDesignationChangedException ex)
+        {
+            throw ex.IsDesignated && restricted
+                ? SystemManagedRefusal()
+                : new EmergencyAccessException(
+                    EmergencyAccessErrorCodes.StaleUpdate,
+                    "The account changed while this was being processed. Try again.");
+        }
+    }
+
+    private static EmergencyAccessException SystemManagedRefusal() =>
+        new(
+            EmergencyAccessErrorCodes.UnsafeOperation,
+            "Recovery Access is system-managed. Display name and avatar cannot be changed here.");
+
     private static void EnsureMutable(User user)
     {
         if (!EmergencyAccessIdentity.IsSystemManaged(user))
             return;
-        throw new EmergencyAccessException(
-            EmergencyAccessErrorCodes.UnsafeOperation,
-            "Recovery Access is system-managed. Display name and avatar cannot be changed here.");
+        throw SystemManagedRefusal();
     }
 
     private static async ValueTask StageOrDeclareNoOpAsync(

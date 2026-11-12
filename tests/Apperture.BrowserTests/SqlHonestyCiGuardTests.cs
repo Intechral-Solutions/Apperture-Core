@@ -112,6 +112,8 @@ public sealed class SqlHonestyCiGuardTests
         { "V2 job-level continue-on-error as an expression", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    continue-on-error: ${{ true }}\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'continue-on-error:'" },
         { "V2 job-level continue-on-error on browser-security", y => y.Replace(BrowserJobTimeout, BrowserJobTimeout + "    continue-on-error: true\n", StringComparison.Ordinal), "job browser-security must not have a job-level 'continue-on-error:'" },
         { "V2 strategy with an experimental matrix entry", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    strategy:\n      fail-fast: false\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'strategy:'" },
+        { "V2 container on build-and-test", y => y.Replace(RequiredJobRunsOn, RequiredJobRunsOn + "    container: ubuntu:24.04\n", StringComparison.Ordinal), "job build-and-test must not have a job-level 'container:'" },
+        { "V2 strategy on browser-security", y => y.Replace(BrowserJobTimeout, BrowserJobTimeout + "    strategy:\n      fail-fast: false\n", StringComparison.Ordinal), "job browser-security must not have a job-level 'strategy:'" },
         { "V2 continue-on-error on the Test step", y => y.Replace("      - name: Test\n", "      - name: Test\n        continue-on-error: true\n", StringComparison.Ordinal), "step 'Test' must not set continue-on-error" },
         { "V2 continue-on-error on the Build step", y => y.Replace("        run: dotnet build Apperture.slnx -c Release --no-restore\n", "        run: dotnet build Apperture.slnx -c Release --no-restore\n        continue-on-error: true\n", StringComparison.Ordinal), "step 'Build' must not set continue-on-error" },
 
@@ -361,11 +363,13 @@ internal static class SqlHonestyCiInvocation
     private static readonly string[] AllowedWorkflowKeys = ["name", "on", "jobs"];
 
     // Both required checks. A job-level `if:` skips the job (reported as success on a required check), `continue-on-error` lets it
-    // pass on failure, `strategy`/`needs`/`container`/`defaults` change how it runs; none is needed by the approved workflow.
+    // pass on failure, `strategy`/`needs`/`container`/`defaults` change how it runs. Only browser-security runs in a container: it
+    // uses the Playwright image so its browsers and libraries are not installed while the job runs, and
+    // BrowserSecurityCiGuardTests pins that image to the Microsoft.Playwright version and forbids container privileges.
     private static readonly (string JobId, string[] Allowed)[] AllowedJobKeys =
     [
         ("build-and-test", ["runs-on", "env", "services", "steps"]),
-        ("browser-security", ["name", "runs-on", "timeout-minutes", "env", "services", "steps"]),
+        ("browser-security", ["name", "runs-on", "timeout-minutes", "container", "env", "services", "steps"]),
     ];
 
     private static IEnumerable<string> EffectiveLines(string stepText) =>

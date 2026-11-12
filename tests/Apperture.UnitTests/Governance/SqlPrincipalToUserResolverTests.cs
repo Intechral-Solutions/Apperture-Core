@@ -5,6 +5,7 @@ using Apperture.UnitTests.Audit;
 using Apperture.Core.Domain.Identity;
 using Apperture.Shared.Kernel;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -137,6 +138,34 @@ public sealed class SqlPrincipalToUserResolverTests
         unit.Single(AuditActionNames.EntraLinkProven).Target!.Id.Should().Be("lnk-pending");
         repo.Verify(r => r.UpdateLastAuthenticatedAtAsync(It.IsAny<ProviderIdentityKey>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
         policy.Verify(p => p.ApplyAfterEntraProvenAsync(UserOne, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(EntraPrimaryLocalDisableOutcome.NotAppliedBusy, true, "another change to administrator access is in progress")]
+    [InlineData(EntraPrimaryLocalDisableOutcome.DeferredAdministratorViabilityUnavailable, true, "could not be established")]
+    [InlineData(EntraPrimaryLocalDisableOutcome.DeferredConcurrentAdministratorAccessChange, true, "administrator access changed while it was being applied")]
+    [InlineData(EntraPrimaryLocalDisableOutcome.Disabled, false, "")]
+    [InlineData(EntraPrimaryLocalDisableOutcome.DeferredLastViablePlatformAdministrator, false, "")]
+    [InlineData(EntraPrimaryLocalDisableOutcome.DeferredLastEntraIndependentPlatformAdministrator, false, "")]
+    public async Task The_resolver_says_so_when_the_policy_was_not_applied_and_stays_silent_about_outcomes_already_recorded(
+        EntraPrimaryLocalDisableOutcome reported, bool warned, string reason)
+    {
+        var pending = new IdentityLink(IdentitySource.Entra, Oid, LastAuthenticatedAt: null, TenantA, LinkId: "lnk-pending");
+        var repo = RepositoryWith(User(pending));
+        repo.Setup(r => r.FindIdentityLinkAsync(It.IsAny<ProviderIdentityKey>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IdentityLinkOwner(UserOne, pending));
+        var policy = new Mock<IEntraPrimaryAuthenticationPolicy>();
+        policy.Setup(p => p.ApplyAfterEntraProvenAsync(UserOne, It.IsAny<CancellationToken>())).ReturnsAsync(reported);
+        var logger = new RecordingLogger<SqlPrincipalToUserResolver>();
+
+        var resolved = await new SqlPrincipalToUserResolver(repo.Object, policy.Object, logger, new RecordingAuditedUnitOfWork())
+            .ResolveUserIdAsync(EntraActor(TenantA, Oid));
+
+        resolved.Should().Be(UserOne, "the session resolves whatever the policy reported");
+        if (warned)
+            logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Message.Contains("user-1") && e.Message.Contains(reason));
+        else
+            logger.Entries.Should().BeEmpty();
     }
 
     [Fact]

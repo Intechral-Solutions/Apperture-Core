@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application;
 using Apperture.Core.Application.Accounts;
 using Apperture.Core.Application.Audit;
@@ -23,6 +24,10 @@ namespace Apperture.ControlPlane.Security;
 /// advisory fast refusal and never the decision. Rule 1: permissions added to a role must be held by the actor. Rule 2: a role
 /// can be assigned or removed only by an actor who holds all of its permissions, and the Platform Administrator role only by a
 /// Platform Administrator.
+/// IAM-10.2b: a change to the Platform Administrator role, to a Local credential or to an identity link is serialized by the
+/// global administrator-set gate, taken first in the unit (before the authority row locks), and is decided by the shared
+/// viability invariants: the change is applied, the state it left is read under the gate, and a newly violated invariant rolls
+/// it back with a typed 409 refusal. A request that changes nothing is a silent no-op before the invariants are consulted.
 /// </remarks>
 public sealed class UserManagementService : IUserManagementService
 {
@@ -36,7 +41,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly ILocalPasswordHasher _passwordHasher;
     private readonly LocalAuthOptions _localOptions;
     private readonly IEntraIdentityAssociationService? _entraAssociation;
-    private readonly IOptionsMonitor<EntraAuthOptions>? _entraOptions;
+    private readonly IAdministratorViabilityCoordinator? _viability;
     private readonly IStrongAuthenticationGate? _strongAuthentication;
     private readonly IEmergencyAccessService? _emergencyAccess;
     private readonly IAccountInvitationService? _invitations;
@@ -56,20 +61,20 @@ public sealed class UserManagementService : IUserManagementService
         ILocalPasswordHasher passwordHasher,
         IOptions<LocalAuthOptions> localOptions,
         IEntraIdentityAssociationService? entraAssociation = null,
-        IOptionsMonitor<EntraAuthOptions>? entraOptions = null,
         IStrongAuthenticationGate? strongAuthentication = null,
         IEmergencyAccessService? emergencyAccess = null,
         IAccountInvitationService? invitations = null,
         IAccountActionTokenService? actionTokens = null,
         IAuditedUnitOfWork? auditedUnitOfWork = null,
         IAuditEventWriter? auditEvents = null,
-        IScopeContainmentEvaluator? scopeEvaluator = null)
+        IScopeContainmentEvaluator? scopeEvaluator = null,
+        IAdministratorViabilityCoordinator? viability = null)
     {
         _scopeEvaluator = scopeEvaluator ?? new ScopeContainmentEvaluator();
         _auditedUnitOfWork = auditedUnitOfWork;
         _auditEvents = auditEvents;
         _entraAssociation = entraAssociation;
-        _entraOptions = entraOptions;
+        _viability = viability;
         _strongAuthentication = strongAuthentication;
         _emergencyAccess = emergencyAccess;
         _invitations = invitations;
@@ -91,7 +96,15 @@ public sealed class UserManagementService : IUserManagementService
     private IAuditEventWriter Events =>
         _auditEvents ?? throw new InvalidOperationException("User administration requires the audit event writer.");
 
+    /// <summary>
+    /// The global administrator-set gate and the viability reads (IAM-10.2b). Absent means the service was built without them, which
+    /// is a wiring defect: a change that could reduce administrator viability is never made without them, so it fails here.
+    /// </summary>
+    private IAdministratorViabilityCoordinator Viability =>
+        _viability ?? throw new InvalidOperationException("Administrator changes require the administrator viability coordinator.");
+
     private static AuditedOperation Operation(string primaryAction) => new(primaryAction, AuditActor.CurrentPrincipal);
+
 
     private static Task<bool> Done(AuditCommittedOperation committed, CancellationToken cancellationToken) => Task.FromResult(true);
 
@@ -667,6 +680,9 @@ public sealed class UserManagementService : IUserManagementService
             Operation(pendingLink is not null ? AuditActionNames.EntraLinkPending : AuditActionNames.IdentityLinkAdded),
             async (transaction, ct) =>
             {
+                // The administrator-set gate first (IAM-10.2b): a link is a viability input. Adding one can only add, so the state
+                // it leaves is asserted below and a link is never refused for viability.
+                var viability = await Viability.EnterAsync(ct);
                 var user = await RequireLinkableUserAsync(userId, ct);
 
                 // A Local link's name is the user's username, so it may be omitted and then defaults to it.
@@ -697,7 +713,7 @@ public sealed class UserManagementService : IUserManagementService
                     if (existingEntra is not null)
                         throw ExternalIdInUse();
 
-                    await _userRepository.AddIdentityLinkAsync(userId, pendingLink with { LinkId = linkId }, ct);
+                    await RaiseOnlyAsync(viability, userId, () => _userRepository.AddIdentityLinkAsync(userId, pendingLink with { LinkId = linkId }, ct), ct);
                     await transaction.StageAsync(
                         AuditEvents.EntraLinkPending(userId, linkId, pendingLink.TenantId!, pendingLink.ExternalId), ct);
                     return true;
@@ -717,14 +733,18 @@ public sealed class UserManagementService : IUserManagementService
 
                 if (source == IdentitySource.Local)
                 {
-                    await _userRepository.AddIdentityLinkAsync(
-                        userId, new IdentityLink(source, linkExternalId, LastAuthenticatedAt: null, LinkId: linkId), ct);
+                    await RaiseOnlyAsync(
+                        viability,
+                        userId,
+                        () => _userRepository.AddIdentityLinkAsync(
+                            userId, new IdentityLink(source, linkExternalId, LastAuthenticatedAt: null, LinkId: linkId), ct),
+                        ct);
                 }
                 else
                 {
                     // A Microsoft link without the directory association needs a tenant the store requires; the store
                     // refuses it, as it always has.
-                    await _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, ct);
+                    await RaiseOnlyAsync(viability, userId, () => _userRepository.AddIdentityLinkAsync(userId, source, linkExternalId, ct), ct);
                 }
 
                 await transaction.StageAsync(AuditEvents.IdentityLinkAdded(userId, linkId, source, linkExternalId), ct);
@@ -732,6 +752,17 @@ public sealed class UserManagementService : IUserManagementService
             },
             Done,
             cancellationToken);
+    }
+
+    /// <summary>
+    /// A write that can only add to administrator viability, made under the gate: the state before, the write, then the assertion
+    /// that nothing was reduced.
+    /// </summary>
+    private static async ValueTask RaiseOnlyAsync(AdministratorViabilityScope viability, UserId affectedUser, Func<ValueTask> write, CancellationToken cancellationToken)
+    {
+        await viability.CaptureBeforeForRaiseAsync(affectedUser.Value, cancellationToken);
+        await write();
+        await viability.AssertRaiseOnlyAsync(cancellationToken);
     }
 
     private async ValueTask<User> RequireLinkableUserAsync(UserId userId, CancellationToken cancellationToken)
@@ -774,6 +805,9 @@ public sealed class UserManagementService : IUserManagementService
             Operation(AuditActionNames.IdentityLinkRemoved),
             async (transaction, refusals, ct) =>
             {
+                // The administrator-set gate first (IAM-10.2b): a Local or Entra link is a viability input.
+                var viability = await Viability.EnterAsync(ct);
+
                 var user = await _userRepository.GetByIdAsync(userId, ct);
                 if (user is not null && EmergencyAccessIdentity.IsSystemManaged(user))
                 {
@@ -789,27 +823,28 @@ public sealed class UserManagementService : IUserManagementService
                 {
                     if (await IsRecoveryAccessUserAsync(userId, ct))
                         return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "identity_link.remove_local"), EmergencyAccessService.UnsafeOperationRefusal());
-                    var adminCount = await _roleRepository.CountUserAssignmentsAsync(new RoleId(BootstrapConstants.PlatformAdminRoleId), ct);
-                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(RoleAuthorityRules.IsPlatformAdministratorRole);
-                    if (adminCount == 1 && userHasPlatformAdmin && removedLink is not null && !HasViableAlternateSignIn(user, removedLink))
-                    {
-                        return refusals.Refuse<bool>(
-                            transaction,
-                            AuditEvents.BlockedLastAdminLinkRemoved(userId, LinkTargetId(removedLink), source),
-                            new IdentityLinkException(
-                                IdentityLinkErrorCodes.LastViableSignInMethod,
-                                "Cannot remove the last sign-in method for the last platform administrator. A pending Microsoft identity is not a sign-in path until it has been used successfully."));
-                    }
                 }
 
-                // No such link: nothing changes and nothing is recorded; the request still succeeds, as it always has.
+                // No such link: nothing changes and nothing is recorded; the request still succeeds, as it always has. This comes
+                // before the invariants (P-9).
                 if (removedLink is null)
                 {
                     transaction.DeclareNoOp();
                     return true;
                 }
 
+                // Apply, verify under the gate, refuse: a Local link and an Entra link alike.
+                await viability.CaptureBeforeAsync(ct);
                 await _userRepository.RemoveIdentityLinkAsync(userId, source, linkExternalId, ct);
+                var verdict = await viability.VerifyAfterAsync(ct);
+                if (!verdict.IsAllowed)
+                {
+                    return refusals.Refuse<bool>(
+                        transaction,
+                        AuditEvents.BlockedLastAdminLinkRemoved(userId, LinkTargetId(removedLink), source),
+                        ViabilityRefusal.For(verdict, ViabilityMutation.IdentityLinkRemoval));
+                }
+
                 await transaction.StageAsync(
                     AuditEvents.IdentityLinkRemoved(userId, LinkTargetId(removedLink), source, linkExternalId, removedLink.TenantId), ct);
                 return true;
@@ -843,6 +878,9 @@ public sealed class UserManagementService : IUserManagementService
             Operation(AuditActionNames.RoleAssigned),
             async (transaction, refusals, ct) =>
             {
+                // 0. The administrator-set gate, when the Platform Administrator role is named: before every authority row lock.
+                var viability = await Viability.EnterForAdministratorRoleAsync(_roleRepository, roleId, ct);
+
                 // 1. The lock set and the decision snapshot.
                 var snapshot = await _roleRepository.LockAuthoritySnapshotAsync(actorUserId, roleId, userId, ct);
                 var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
@@ -856,6 +894,7 @@ public sealed class UserManagementService : IUserManagementService
                 // can spell the id in another case and still find the row, but every decision, stored assignment and audit row
                 // names the role by the id the row carries.
                 var lockedRoleId = role.Id;
+                AdministratorRoleGate.RequireGateHeldFor(lockedRoleId, viability);
                 if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: false) is { } refused)
                     return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, lockedRoleId, refused.Reason, refused.Missing), refused.ToException());
 
@@ -888,7 +927,13 @@ public sealed class UserManagementService : IUserManagementService
                             "This role's permissions could not be read, so it cannot be assigned. Replace its permissions first."));
                 }
 
+                // Assigning can only add to administrator viability: the gate serializes it with every reducer, and the state it left
+                // is asserted, never refused.
+                if (viability is not null)
+                    await viability.CaptureBeforeForRaiseAsync(userId.Value, ct);
                 await _roleRepository.AssignToUserAsync(userId, lockedRoleId, ct);
+                if (viability is not null)
+                    await viability.AssertRaiseOnlyAsync(ct);
                 await transaction.StageAsync(AuditEvents.RoleAssigned(userId, lockedRoleId, AuditSensitivities.MaxOf(role.Permissions, _descriptorRegistry)), ct);
                 return true;
             },
@@ -908,6 +953,9 @@ public sealed class UserManagementService : IUserManagementService
             Operation(AuditActionNames.RoleRemoved),
             async (transaction, refusals, ct) =>
             {
+                // 0. The administrator-set gate, when the Platform Administrator role is named: before every authority row lock.
+                var viability = await Viability.EnterForAdministratorRoleAsync(_roleRepository, roleId, ct);
+
                 // 1. The lock set and the decision snapshot.
                 var snapshot = await _roleRepository.LockAuthoritySnapshotAsync(actorUserId, roleId, userId, ct);
                 var authority = RoleAuthorityRules.AuthorityOf(actor, actorUserId, snapshot, _scopeEvaluator);
@@ -920,6 +968,7 @@ public sealed class UserManagementService : IUserManagementService
                     ?? throw new GovernanceNotFoundException(GovernanceNotFoundKinds.Role, roleId.Value);
                 // The locked row's own id from here on, as in assignment: a request may spell the id in another case.
                 var lockedRoleId = role.Id;
+                AdministratorRoleGate.RequireGateHeldFor(lockedRoleId, viability);
                 if (RoleAuthorityRules.CheckEntitlement(authority, role, removal: true) is { } refused)
                     return refusals.Refuse<bool>(transaction, AuditEvents.RoleAssignmentRejected(userId, lockedRoleId, refused.Reason, refused.Missing), refused.ToException());
 
@@ -945,23 +994,23 @@ public sealed class UserManagementService : IUserManagementService
                     return true;
                 }
 
-                // 5. State refusals, for a real change only. The last-administrator guard is unchanged here: it counts assignments
-                // and is replaced by the shared viability invariant in IAM-10.2b.
-                if (RoleAuthorityRules.IsPlatformAdministratorRole(lockedRoleId))
+                // 5. State refusals, for a real change only: apply, verify under the gate, refuse (IAM-10.2b, P-9). The removal is made
+                // in this transaction, the state it left is read, and a newly violated invariant rolls it back with the refusal.
+                if (viability is not null)
+                    await viability.CaptureBeforeAsync(ct);
+                await _roleRepository.RemoveFromUserAsync(userId, lockedRoleId, ct);
+                if (viability is not null)
                 {
-                    var count = await _roleRepository.CountUserAssignmentsAsync(lockedRoleId, ct);
-                    if (count <= 1)
+                    var verdict = await viability.VerifyAfterAsync(ct);
+                    if (!verdict.IsAllowed)
                     {
                         return refusals.Refuse<bool>(
                             transaction,
                             AuditEvents.BlockedLastPlatformAdminRemoval(userId, lockedRoleId),
-                            new GovernanceConflictException(
-                                GovernanceConflictCodes.LastViableAdministrator,
-                                "Cannot remove the last platform administrator role assignment."));
+                            ViabilityRefusal.For(verdict, ViabilityMutation.AdministratorRoleRemoval));
                     }
                 }
 
-                await _roleRepository.RemoveFromUserAsync(userId, lockedRoleId, ct);
                 await transaction.StageAsync(AuditEvents.RoleRemoved(userId, lockedRoleId), ct);
                 return true;
             },
@@ -980,29 +1029,47 @@ public sealed class UserManagementService : IUserManagementService
             Operation(AuditActionNames.PasswordSet),
             async (transaction, ct) =>
             {
+                // The administrator-set gate first (L-P3): a Recovery Access designation and a revocation take it too, so the account
+                // cannot become the system-managed Recovery Access account between the restriction decided below and the write.
+                await Viability.EnterAsync(ct);
+
                 var user = await _userRepository.GetByIdAsync(userId, ct)
                     ?? throw new InvalidOperationException($"User {userId.Value} not found.");
                 if (EmergencyAccessIdentity.IsSystemManaged(user))
-                {
-                    throw new EmergencyAccessException(
-                        EmergencyAccessErrorCodes.UnsafeOperation,
-                        "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
-                }
+                    throw SystemManagedPasswordRefusal();
                 if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
                     throw new InvalidOperationException("User has no Local identity link; cannot set local password.");
 
                 LocalPasswordPolicy.Require(newPassword, user);
 
                 credential ??= _passwordHasher.HashPassword(newPassword!);
-                await _localCredentialRepository.SetPasswordAsync(userId, credential.Value.Hash, credential.Value.Salt, _passwordHasher.AlgorithmName, ct);
+
+                // The stored designation, read under the user's row lock immediately before the credential write and held to the end
+                // of the transaction: what the restriction above was decided on is what the write reaches, even against a writer of the
+                // designation that did not take the gate. The account is named by the id of the row loaded above.
+                switch (await _userRepository.GetDesignationForUpdateAsync(user.Id, ct))
+                {
+                    case null:
+                        throw new InvalidOperationException($"User {userId.Value} not found.");
+                    case true:
+                        throw SystemManagedPasswordRefusal();
+                }
+
+                await _localCredentialRepository.SetPasswordAsync(user.Id, credential.Value.Hash, credential.Value.Salt, _passwordHasher.AlgorithmName, ct);
                 if (_actionTokens is not null)
-                    await _actionTokens.RevokePasswordLifecycleTokensAsync(userId, ct);
-                await transaction.StageAsync(AuditEvents.PasswordSet(userId), ct);
+                    await _actionTokens.RevokePasswordLifecycleTokensAsync(user.Id, ct);
+                await transaction.StageAsync(AuditEvents.PasswordSet(user.Id), ct);
                 return true;
             },
             Done,
             cancellationToken);
     }
+
+    /// <summary>The established refusal of an ordinary password change to the system-managed Recovery Access account.</summary>
+    private static EmergencyAccessException SystemManagedPasswordRefusal() =>
+        new(
+            EmergencyAccessErrorCodes.UnsafeOperation,
+            "Recovery Access is system-managed. The local password must be changed through Emergency Access operator tooling.");
 
     /// <inheritdoc />
     public async ValueTask SetLocalCredentialDisabledAsync(UserId userId, bool disabled, CancellationToken cancellationToken = default)
@@ -1014,6 +1081,10 @@ public sealed class UserManagementService : IUserManagementService
             Operation(disabled ? AuditActionNames.CredentialDisabled : AuditActionNames.LocalCredentialReenabled),
             async (transaction, refusals, ct) =>
             {
+                // The administrator-set gate first: the credential is a viability input, and whether this call changes anything is
+                // decided under it, so a request that races another writer sees what that writer committed.
+                var viability = await Viability.EnterAsync(ct);
+
                 var user = await _userRepository.GetByIdAsync(userId, ct)
                     ?? throw new InvalidOperationException($"User {userId.Value} not found.");
                 if (!user.IdentityLinks.Any(l => l.Source == IdentitySource.Local))
@@ -1053,25 +1124,38 @@ public sealed class UserManagementService : IUserManagementService
 
                     if (await IsRecoveryAccessUserAsync(userId, ct))
                         return refusals.Refuse<bool>(transaction, AuditEvents.UnsafeOperationBlocked(userId, "credential.disable"), EmergencyAccessService.UnsafeOperationRefusal());
-                    var adminCount = await _roleRepository.CountUserAssignmentsAsync(new RoleId(BootstrapConstants.PlatformAdminRoleId), ct);
-                    var userHasPlatformAdmin = user.AssignedRoleIds.Any(RoleAuthorityRules.IsPlatformAdministratorRole);
-                    if (adminCount == 1 && userHasPlatformAdmin && !HasViableAlternateSignIn(user, excludedLink: null))
-                    {
-                        return refusals.Refuse<bool>(
-                            transaction,
-                            AuditEvents.BlockedLastAdminCredentialDisabled(userId),
-                            new InvalidOperationException("Cannot disable the only local credential for the last platform administrator who has no other sign-in path."));
-                    }
                 }
 
-                // Already in the requested state: nothing changes and nothing is recorded; the request still succeeds.
+                // Already in the requested state: nothing changes and nothing is recorded; the request still succeeds. This comes
+                // before the invariants (P-9), after every refusal that depends on who is asking and whom it concerns.
                 if (cred.IsDisabled == disabled)
                 {
                     transaction.DeclareNoOp();
                     return true;
                 }
 
+                // Apply, verify under the gate, refuse. Enabling can only add, so it is asserted and never refused.
+                if (disabled)
+                    await viability.CaptureBeforeAsync(ct);
+                else
+                    await viability.CaptureBeforeForRaiseAsync(userId.Value, ct);
                 await _localCredentialRepository.SetDisabledAsync(userId, disabled, ct);
+                if (disabled)
+                {
+                    var verdict = await viability.VerifyAfterAsync(ct);
+                    if (!verdict.IsAllowed)
+                    {
+                        return refusals.Refuse<bool>(
+                            transaction,
+                            AuditEvents.BlockedLastAdminCredentialDisabled(userId),
+                            ViabilityRefusal.For(verdict, ViabilityMutation.LocalCredentialDisable));
+                    }
+                }
+                else
+                {
+                    await viability.AssertRaiseOnlyAsync(ct);
+                }
+
                 await transaction.StageAsync(
                     disabled ? AuditEvents.CredentialDisabled(userId) : AuditEvents.LocalCredentialReenabled(userId), ct);
                 return true;
@@ -1161,21 +1245,6 @@ public sealed class UserManagementService : IUserManagementService
         if (!allowed)
             throw new UnauthorizedAccessException("Not authorized to assign permissions.");
         return new ActorId(actor.Id.Value);
-    }
-
-    /// <summary>
-    /// An Entra link is a real alternative only when it has been proven by a successful authentication
-    /// (<c>LastAuthenticatedAt != null</c>) and Entra is currently usable. A pending administrator
-    /// association is not a sign-in path and must not satisfy the last-administrator guard.
-    /// </summary>
-    private bool HasViableAlternateSignIn(User user, IdentityLink? excludedLink)
-    {
-        var entraUsable = EntraConfigurationState.IsUsable(_entraOptions?.CurrentValue);
-        return user.IdentityLinks.Any(l =>
-            l.Source == IdentitySource.Entra
-            && l.IsProven
-            && entraUsable
-            && (excludedLink is null || !ReferenceEquals(l, excludedLink)));
     }
 
     private static void ValidateEntraExternalId(IdentitySource source, string? externalId)

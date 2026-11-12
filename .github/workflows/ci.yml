@@ -113,32 +113,33 @@ jobs:
     name: browser-security
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # The job runs inside Microsoft's Playwright image for .NET. Its tag is the Microsoft.Playwright version pinned in
+    # Directory.Packages.props (BrowserSecurityCiGuardTests keeps the two equal). The image carries the .NET SDK, Chromium,
+    # Firefox, WebKit and the operating-system libraries they need, so nothing is installed from the Ubuntu mirrors or the
+    # Playwright CDN at run time. The container gets no options: no privileges, no host namespaces, no extra mounts.
+    container:
+      image: mcr.microsoft.com/playwright/dotnet:v1.63.0-noble
     env:
       APPERTURE_CI_MSSQL_SA_PASSWORD: "AppertureCi_Governance55a!"
       APPERTURE_BROWSER_TESTS: "1"
+    # In a container job the service is reached by its name on the job network (sqlserver), not on 127.0.0.1, and it needs no
+    # published port.
     services:
       sqlserver:
         image: mcr.microsoft.com/mssql/server:2022-latest
         env:
           ACCEPT_EULA: "Y"
           MSSQL_SA_PASSWORD: ${{ env.APPERTURE_CI_MSSQL_SA_PASSWORD }}
-        ports:
-          - 1433:1433
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "10.0.x"
 
       - name: Wait for SQL Server
         shell: bash
         run: |
           set -euo pipefail
           for i in $(seq 1 60); do
-            if (echo > /dev/tcp/127.0.0.1/1433) 2>/dev/null; then
+            if (echo > /dev/tcp/sqlserver/1433) 2>/dev/null; then
               echo "SQL Server port is open (attempt $i)"
               break
             fi
@@ -153,18 +154,12 @@ jobs:
       - name: Build
         run: dotnet build tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj -c Release --no-restore
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-1.63.0
-
-      - name: Install Playwright browsers
-        run: pwsh tests/Apperture.BrowserTests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium firefox webkit
-
       - name: Browser security suite
         env:
-          APPERTURE_TEST_SQL_CONNECTION_STRING: ${{ format('Server=127.0.0.1,1433;User Id=sa;Password={0};TrustServerCertificate=True;Initial Catalog=Apperture;', env.APPERTURE_CI_MSSQL_SA_PASSWORD) }}
+          # Firefox refuses to start when $HOME is not owned by the user running it. In a container job GitHub sets
+          # HOME=/github/home, a mount owned by the runner user (pwuser in this image), while the steps run as root.
+          HOME: /root
+          APPERTURE_TEST_SQL_CONNECTION_STRING: ${{ format('Server=sqlserver,1433;User Id=sa;Password={0};TrustServerCertificate=True;Initial Catalog=Apperture;', env.APPERTURE_CI_MSSQL_SA_PASSWORD) }}
         run: >
           dotnet test tests/Apperture.BrowserTests/Apperture.BrowserTests.csproj
           -c Release --no-build --verbosity normal

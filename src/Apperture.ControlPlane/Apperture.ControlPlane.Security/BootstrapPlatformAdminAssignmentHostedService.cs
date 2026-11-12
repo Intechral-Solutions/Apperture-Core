@@ -1,3 +1,4 @@
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.Audit;
 using Apperture.Core.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,7 +38,8 @@ public sealed class BootstrapPlatformAdminAssignmentHostedService : IHostedServi
         var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         var roleRepo = scope.ServiceProvider.GetRequiredService<IRoleRepository>();
         var unit = scope.ServiceProvider.GetRequiredService<IAuditedUnitOfWork>();
-        await BootstrapPlatformAdminAssignment.ExecuteAsync(_options.Value, userRepo, roleRepo, _logger, unit, cancellationToken)
+        var viability = scope.ServiceProvider.GetRequiredService<IAdministratorViabilityCoordinator>();
+        await BootstrapPlatformAdminAssignment.ExecuteAsync(_options.Value, userRepo, roleRepo, _logger, unit, viability, cancellationToken)
             .ConfigureAwait(false);
     }
 

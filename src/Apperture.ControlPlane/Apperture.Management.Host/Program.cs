@@ -4,6 +4,7 @@ using Apperture.Connectors.CampusNexus;
 using Apperture.Connectors.Sftp;
 using Apperture.ConnectorResolution;
 using Apperture.ControlPlane.Security;
+using Apperture.ControlPlane.Security.AdministratorViability;
 using Apperture.Core.Application.Connector;
 using Apperture.RuntimePlane.Dispatch.SqlServer;
 using Apperture.Management.Host;
@@ -84,6 +85,9 @@ builder.Services.AddSampleHelloWorldIntegration();
 builder.Services.AddAppertureAuthentication(builder.Configuration);
 builder.Services.AddBrowserRequestTrust(builder.Configuration, builder.Environment);
 builder.Services.AddAuthorization();
+// Last: hosted services start in registration order, and the attestation must start after the migrations, the secret-store
+// validation and every governance startup step. It builds no Entra or OpenID Connect options.
+builder.Services.AddHostConfigurationAttestation();
 
 var app = builder.Build();
 app.UseManagementHostExceptionHandling();

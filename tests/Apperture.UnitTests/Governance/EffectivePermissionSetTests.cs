@@ -394,8 +394,6 @@ public sealed class EffectivePermissionSetTests
 
         public ValueTask<IReadOnlyList<Role>> GetRolesAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public ValueTask<Role?> GetRoleAsync(RoleId roleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private static readonly UserId User1 = new("user-1");

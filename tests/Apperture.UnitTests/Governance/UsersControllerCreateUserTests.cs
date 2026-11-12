@@ -262,11 +262,5 @@ public sealed class UsersControllerCreateUserTests
 
         public ValueTask<IReadOnlyList<Role>> GetRolesForUserAsync(UserId userId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<Role>>([]);
-
-        public ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
-
-        public ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
     }
 }

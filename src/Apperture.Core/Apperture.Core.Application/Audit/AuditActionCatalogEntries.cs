@@ -406,7 +406,7 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.User,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
-            Details = AuditDetailSchemas.UserOnly,
+            Details = AuditDetailSchemas.UserWithConfigurationEvidence,
             IntroducedIn = "f3418f25",
             IntroducedAfterEpic37Migration = true,
             Writer = "EmergencyAccessService.cs:222",
@@ -425,6 +425,22 @@ internal static class AuditActionCatalogEntries
             OutcomeMap = Map(("auth", AuditOutcomeCodes.Blocked)),
             Defects = [new AuditAttributionDefect(AuditAttributionIssues.SubjectRecordedAsActor, AuditIssueCertainties.Definite)],
             Writer = "EmergencyAccessService.cs:245",
+        },
+        new()
+        {
+            // The refusal is recorded after the rollback by the Recovery Access or authenticator operation that was refused, with the
+            // actor who attempted it and the affected account as the target. Every writer builds the row through one mapping
+            // (ViabilityRefusalAudit), so the operation, the code and the evidence class come from the decision.
+            Action = "emergency.auth.blocked.administrator_viability",
+            Category = AuditCategories.Identity,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.User,
+            Basis = AuditBases.Attempt,
+            WriteClass = AuditWriteClass.Attempt,
+            Details = AuditDetailSchemas.AdministratorViabilityBlocked,
+            IntroducedIn = "IAM-10.2b",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "EmergencyAccessService.cs",
         },
         new()
         {
@@ -514,10 +530,25 @@ internal static class AuditActionCatalogEntries
             TargetType = AuditTargetTypes.User,
             Basis = AuditBases.Change,
             WriteClass = AuditWriteClass.RequiredMutation,
-            Details = AuditDetailSchemas.UserOnly,
+            Details = AuditDetailSchemas.UserWithConfigurationEvidence,
             IntroducedIn = "f3418f25",
             IntroducedAfterEpic37Migration = true,
             Writer = "NativeMfaService.cs:176",
+        },
+        new()
+        {
+            // The switch of the non-destructive replacement commits it with the new authenticator and its codes, in one audited unit,
+            // with the evidence class of its posture-only decision.
+            Action = "auth.mfa.replaced",
+            Category = AuditCategories.Identity,
+            Severity = AuditSeverities.Elevated,
+            TargetType = AuditTargetTypes.User,
+            Basis = AuditBases.Change,
+            WriteClass = AuditWriteClass.RequiredMutation,
+            Details = AuditDetailSchemas.UserWithConfigurationEvidence,
+            IntroducedIn = "IAM-10.2b",
+            IntroducedAfterEpic37Migration = true,
+            Writer = "NativeMfaService.cs",
         },
         new()
         {

@@ -199,12 +199,51 @@ internal static class AuditDetailSchemas
         IdField("operation"),
     ]);
 
+    /// <summary>
+    /// The operations of the emergency command line that can reduce administrator viability, as the refusal records them. The
+    /// refusal codes are owned by the layer that decides them, so <c>code</c> is an identifier and not an enumeration here.
+    /// </summary>
+    internal static readonly string[] ViabilityGuardedOperations =
+        ["recovery_access.designate", "recovery_access.revoke", "mfa.reset", "mfa.replace"];
+
+    /// <summary>
+    /// A change refused because it could leave no viable administrator, or because the evidence needed to decide could not be
+    /// trusted. It names the operation, the stable refusal code and the class of configuration evidence the refusal was made under
+    /// (never a value of the configuration).
+    /// </summary>
+    internal static readonly AuditDetailSchema AdministratorViabilityBlocked = new(
+    [
+        IdField("userId"),
+        EnumField("operation", true, ViabilityGuardedOperations),
+        IdField("code"),
+        // A refusal always says which evidence class it was made under, including the refusal for missing evidence.
+        ConfigurationEvidenceField(required: true),
+    ]);
+
     // ---- Recovery Access administration ----
+
+    /// <summary>
+    /// The class of configuration evidence a viability decision used (attested, not_required or unavailable). It is the only
+    /// configuration detail an event carries: no host id, fingerprint, tenant, option value or secret enters an event.
+    /// </summary>
+    private static AuditFieldDefinition ConfigurationEvidenceField(bool required = false) =>
+        EnumField(
+            Apperture.Core.Application.AdministratorViability.ConfigurationEvidenceNames.AuditDetailName,
+            required,
+            [.. Apperture.Core.Application.AdministratorViability.ConfigurationEvidenceNames.All]);
 
     internal static readonly AuditDetailSchema RecoveryAccessDesignated = new(
     [
         IdField("userId"),
         IdField("previousUserId", required: false),
+        ConfigurationEvidenceField(),
+    ]);
+
+    /// <summary>A change that can reduce administrator viability and names the evidence it used.</summary>
+    internal static readonly AuditDetailSchema UserWithConfigurationEvidence = new(
+    [
+        IdField("userId"),
+        ConfigurationEvidenceField(),
     ]);
 
     internal static readonly AuditDetailSchema RecoveryAccessProvisioned = new(

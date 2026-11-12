@@ -147,4 +147,4 @@ Follow [AGENTS.md](AGENTS.md) and the playbooks in [.ai/playbooks/](.ai/playbook
 
 ## Pull requests
 
-CI must pass before merge. The pipeline runs on push and pull requests to `master` (the workflow also lists `main`; see [.github/workflows/ci.yml](.github/workflows/ci.yml)). Two checks are required: `build-and-test` (restore, Release build, the SQL execution honesty check, then all tests against a SQL Server service container) and `browser-security` (the Playwright browser suite). Both always run in full.
+CI must pass before merge. The pipeline runs on push and pull requests to `master` (the workflow also lists `main`; see [.github/workflows/ci.yml](.github/workflows/ci.yml)). Two checks are required: `build-and-test` (restore, Release build, the SQL execution honesty check, then all tests against a SQL Server service container) and `browser-security` (the Playwright browser suite, run in Microsoft's Playwright container image pinned to the `Microsoft.Playwright` version; see [tests/Apperture.BrowserTests/README.md](tests/Apperture.BrowserTests/README.md)). Both always run in full.

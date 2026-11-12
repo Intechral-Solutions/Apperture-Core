@@ -111,7 +111,7 @@ public sealed class AccountContactService : IAccountContactService
                     throw new AccountSecurityException(AccountSecurityErrorCodes.EmailInUse, "That contact email cannot be used.");
 
                 var updated = user with { PendingEmailAddress = normalized };
-                await _users.UpdateAsync(updated, ct);
+                await UpdateUserAsync(updated, ct);
                 staged = await IssueAsync(transaction, updated, normalized, token, changing, resent: false, ct);
                 return staged;
             },
@@ -170,7 +170,7 @@ public sealed class AccountContactService : IAccountContactService
 
                 var changing = user.HasVerifiedContactEmail
                     && !string.Equals(user.EmailAddress, destination, StringComparison.Ordinal);
-                await _users.UpdateAsync(
+                await UpdateUserAsync(
                     user with
                     {
                         EmailAddress = destination,
@@ -289,6 +289,25 @@ public sealed class AccountContactService : IAccountContactService
         catch (StrongAuthenticationException ex) when (ex.Code == StrongAuthenticationErrorCodes.NotConfigured)
         {
             // Entra session is the strongest available proof when Authentication Context is not configured.
+        }
+    }
+
+    /// <summary>
+    /// The user write of every change here. The repository checks the stored designation under a row lock in this transaction, so an
+    /// account designated since the check above is refused with the refusal that account already has, and one revoked since is
+    /// refused as stale, to be repeated. Nothing is written in either case.
+    /// </summary>
+    private async ValueTask UpdateUserAsync(User user, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _users.UpdateAsync(user, cancellationToken);
+        }
+        catch (UserDesignationChangedException ex)
+        {
+            throw ex.IsDesignated
+                ? new AccountSecurityException(AccountSecurityErrorCodes.SystemManaged, "Recovery Access does not use contact email.")
+                : new AccountSecurityException(AccountSecurityErrorCodes.StaleUpdate, "The account changed while this was being processed. Try again.");
         }
     }
 

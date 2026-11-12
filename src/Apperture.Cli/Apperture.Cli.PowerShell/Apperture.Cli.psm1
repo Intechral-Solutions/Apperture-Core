@@ -293,23 +293,36 @@ function Set-AppertureEmergencyPassword {
 function Register-AppertureEmergencyAuthenticator {
     <#
     .SYNOPSIS
-        Enrolls native authenticator MFA for Recovery Access.
+        Enrolls native authenticator MFA for Recovery Access, or replaces an enrolled authenticator.
+    .DESCRIPTION
+        Without -Reset the first authenticator is enrolled. With -Reset the enrolled authenticator is replaced without a gap: the
+        current authenticator and recovery codes keep working until a code from the new one is verified. With -Reset -BareReset the
+        authenticator and every recovery code are removed at once (destructive); it is never used as a fallback for a failed replacement.
+        The exit status of the apperture command is left in $LASTEXITCODE (0 done, 1 refused, 2 invalid, 3 retry, 4 evidence
+        unavailable, 5 result not confirmed, 6 internal failure).
     #>
     [CmdletBinding()]
     param(
         [Parameter()]
         [string]$Username,
-        [switch]$Reset
+        [switch]$Reset,
+        [switch]$BareReset
     )
+    if ($BareReset -and -not $Reset) {
+        throw '-BareReset is only valid together with -Reset.'
+    }
     if ($Reset) {
-        $cmd = 'reset-mfa'
+        $cmd = @('reset-mfa')
+        if ($BareReset) {
+            $cmd += '--bare-reset'
+        }
     } else {
-        $cmd = 'enroll-mfa'
+        $cmd = @('enroll-mfa')
     }
     if ($Username) {
-        Invoke-AppertureEmergencyHelper -Args @($cmd, '--username', $Username)
+        Invoke-AppertureEmergencyHelper -Args ($cmd + @('--username', $Username))
     } else {
-        Invoke-AppertureEmergencyHelper -Args @($cmd)
+        Invoke-AppertureEmergencyHelper -Args $cmd
     }
 }
 

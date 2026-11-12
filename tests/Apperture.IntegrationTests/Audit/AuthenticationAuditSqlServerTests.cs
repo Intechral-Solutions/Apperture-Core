@@ -175,7 +175,7 @@ public sealed class AuthenticationAuditSqlServerTests : IAsyncLifetime
         {
             var totp = new SqlNativeTotpCredentialRepository(db);
             await totp.UpsertPendingAsync(id, [1, 2, 3], "test-key", DateTimeOffset.UtcNow);
-            await totp.MarkEnrolledAsync(id, 1, DateTimeOffset.UtcNow);
+            (await totp.MarkEnrolledAsync(id, (await totp.GetByUserIdAsync(id))!.CredentialId, 1, DateTimeOffset.UtcNow)).Should().BeTrue();
         }
 
         await using (var db = _db.NewDb())
@@ -195,15 +195,9 @@ public sealed class AuthenticationAuditSqlServerTests : IAsyncLifetime
         }
     }
 
+    /// <summary>The production service (IAM-10.2b WP4B-C): a regeneration of the codes takes the global gate and asserts it only added.</summary>
     private static NativeMfaService Mfa(AppertureDbContext db, IAuditedUnitOfWork unit) =>
-        new(
-            new SqlNativeTotpCredentialRepository(db),
-            new SqlNativeMfaRecoveryCodeRepository(db),
-            new LocalPasswordHasher(),
-            new PassThroughProtector(),
-            TimeProvider.System,
-            NullLogger<NativeMfaService>.Instance,
-            unit);
+        NativeMfaComposition.Over(db, null, new PassThroughProtector(), unit);
 
     /// <summary>The local MFA step of a user whose password this request's pending ticket already verified.</summary>
     private AuthController MfaController(
@@ -342,8 +336,6 @@ public sealed class AuthenticationAuditSqlServerTests : IAsyncLifetime
         public ValueTask<IReadOnlyList<Role>> GetRolesAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<Role>>([]);
         public ValueTask<Role?> GetRoleAsync(RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.FromResult<Role?>(null);
         public ValueTask<IReadOnlyList<Role>> GetRolesForUserAsync(UserId userId, CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<Role>>([]);
-        public ValueTask AssignRoleToUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        public ValueTask RemoveRoleFromUserAsync(UserId userId, RoleId roleId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 
     /// <summary>Sign-in failure rows stay on the append bridge (IAM-11.4); they are not under test here.</summary>
